@@ -3,7 +3,7 @@ all: installed
 GIT_DIR = build/openni
 GIT_URL = https://ros-pkg-git@github.com/ros-pkg-git/OpenNI.git
 #GIT_PATCH = redist.patch
-GIT_REVISION=ros
+GIT_REVISION=master
 
 OPENNI_LIB=$(shell echo $$(eval rospack find openni | sed 's/\//\\\//g')\\/lib)
 PLATFORM=Linux-x86
