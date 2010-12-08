@@ -21,6 +21,7 @@ installed: $(GIT_DIR)
 		sed -i -e 's/..\/..\/..\/..\/Data\/SamplesConfig.xml/$(OPENNI_LIB)\/SamplesConfig.xml/g' NiRecordSynthetic/NiRecordSynthetic.cpp && \
 		sed -i -e 's/..\/..\/..\/..\/Data\/SamplesConfig.xml/$(OPENNI_LIB)\/SamplesConfig.xml/g' NiSimpleViewer/NiSimpleViewer.cpp && \
 		sed -i -e 's/..\/..\/..\/..\/Data\/SamplesConfig.xml/$(OPENNI_LIB)\/SamplesConfig.xml/g' NiSimpleRead/NiSimpleRead.cpp && \
+		sed -i -e 's/..\/..\/..\/..\/Data\/SamplesConfig.xml/$(OPENNI_LIB)\/SamplesConfig.xml/g' NiUserTracker/main.cpp && \
 		cd -
 	cd $(GIT_DIR)/Platform/$(PLATFORM)/Build && make redist && cd -
 	@cp -r $(GIT_DIR)/Platform/$(PLATFORM)/Redist/Bin/* bin/
