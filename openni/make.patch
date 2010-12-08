@@ -1,0 +1,56 @@
+--- Platform/Linux-x86/Build/CommonMakefile.orig	2010-12-05 17:13:25.000000000 -0800
++++ Platform/Linux-x86/Build/CommonMakefile	2010-12-05 17:13:45.000000000 -0800
+@@ -105,7 +105,7 @@
+ 	CFLAGS += -g
+ endif
+ ifeq "$(CFG)" "Release"
+-	CFLAGS += -O2 -DNDEBUG
++	CFLAGS += -O2
+ 
+ 	ifeq ($(SSE_GENERATION), 2)
+ 		CFLAGS += -msse2
+--- Platform/Linux-x86/Build/OpenNI/Makefile.orig	2010-12-05 20:36:56.000000000 -0800
++++ Platform/Linux-x86/Build/OpenNI/Makefile	2010-12-05 20:37:05.000000000 -0800
+@@ -1,4 +1,4 @@
+-BIN_DIR = ../../Bin
++BIN_DIR = ../../Lib
+ 
+ INC_DIRS = \
+ 	../../../../Include \
+--- Platform/Linux-x86/Build/Modules/nimRecorder/Makefile.orig	2010-12-05 20:46:56.000000000 -0800
++++ Platform/Linux-x86/Build/Modules/nimRecorder/Makefile	2010-12-05 20:46:59.000000000 -0800
+@@ -1,4 +1,4 @@
+-BIN_DIR = ../../../Bin
++BIN_DIR = ../../../Lib
+ 
+ INC_DIRS = \
+ 	../../../../../Include \
+--- Platform/Linux-x86/Build/Modules/nimMockNodes/Makefile.orig	2010-12-05 20:46:08.000000000 -0800
++++ Platform/Linux-x86/Build/Modules/nimMockNodes/Makefile	2010-12-05 20:46:15.000000000 -0800
+@@ -1,4 +1,4 @@
+-BIN_DIR = ../../../Bin
++BIN_DIR = ../../../Lib
+ 
+ INC_DIRS = \
+ 	../../../../../Include \
+--- Platform/Linux-x86/Build/Modules/nimCodecs/Makefile.orig	2010-12-05 20:45:36.000000000 -0800
++++ Platform/Linux-x86/Build/Modules/nimCodecs/Makefile	2010-12-05 20:45:41.000000000 -0800
+@@ -1,4 +1,4 @@
+-BIN_DIR = ../../../Bin
++BIN_DIR = ../../../Lib
+ 
+ INC_DIRS = \
+ 	../../../../../Include \
+--- Platform/Linux-x86/Build/CommonMakefile.orig	2010-12-05 20:53:43.000000000 -0800
++++ Platform/Linux-x86/Build/CommonMakefile	2010-12-05 20:54:01.000000000 -0800
+@@ -31,6 +31,10 @@
+ 	CFG = Release
+ endif
+ 
++ifndef LIB_DIRS
++  LIB_DIRS = ../../../Lib/$(CFG)
++endif
++
+ ifndef TARGET_SYS_ROOT
+ 	TARGET_SYS_ROOT = /
+ endif

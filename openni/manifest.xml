@@ -1,0 +1,19 @@
+<package>
+  <description brief="PrimeSense OpenNI">
+    PrimeSense OpenNI interface.
+  </description>
+
+  <author>Maintained by Radu Bogdan Rusu, Ken Conley</author>
+  <license>LGPL</license>
+  <review status="beta" notes=""/>
+  <url>http://www.openni.org/</url>
+
+  <export>
+    <cpp cflags="-I${prefix}/include/ni" lflags="-Wl,-rpath,${prefix}/lib -L${prefix}/lib -lOpenNI -lnimCodecs -lnimMockNodes -lnimRecorder" />
+  </export>
+
+  <platform os="ubuntu" version="10.04"/>
+  <platform os="ubuntu" version="10.10"/>
+
+  <rosdep name="libusb-dev" />
+</package>

@@ -1,0 +1,14 @@
+<stack>
+  <description brief="The ROS OpenNI project">
+  
+    ROS OpenNI is an open source project focused on the integration of the
+    PrimeSense sensors with ROS. 
+  
+  </description>
+  <author>Maintained by Radu Bogdan Rusu, Ken Conley</author>
+  <license>BSD,LGPL</license>  
+  <review status="unreviewed" notes=""/>
+  <url>http://ros.org/wiki/ROS</url>
+  <depend stack="ros" />
+
+</stack>

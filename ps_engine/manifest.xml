@@ -1,0 +1,19 @@
+<package>
+  <description brief="PrimeSense Engine">
+    PrimeSense Sensor Engine.
+  </description>
+
+  <author>Maintained by Radu Bogdan Rusu, Ken Conley</author>
+  <license>LGPL</license>
+  <review status="beta" notes=""/>
+  <url>http://www.openni.org/</url>
+
+  <export>
+    <cpp lflags="-Wl,-rpath,${prefix}/lib -L${prefix}/lib -lXnCore -lXnDDK -lXnDeviceSensorV2 -lXnFormats" />
+  </export>
+
+  <depend package="openni" />
+
+  <platform os="ubuntu" version="10.04"/>
+  <platform os="ubuntu" version="10.10"/>
+</package>

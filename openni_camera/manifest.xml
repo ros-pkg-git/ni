@@ -1,0 +1,41 @@
+<package>
+  <description brief="An OpenNI camera ROS driver">
+
+    A general purpose ROS driver for all OpenNI cameras. The driver publishes:
+    <ul>
+      <li> RGB/IR image data</li>
+      <li> depth data as PointCloud and PointCloud2</li>
+      <li> ... </li>
+    </ul>
+    
+    There are two versions of the driver: a standard ROS node, and a nodelet. 
+
+  </description>
+
+  <author>Radu Bogdan Rusu, Patrick Mihelich, Suat Gedikli</author>
+
+  <license>BSD</license>
+
+  <url>http://ros.org/wiki/openni_camera</url>
+
+  <review status="experimental" notes="beta"/>
+
+  <depend package="roscpp" />
+  <depend package="nodelet" />
+  <depend package="camera_info_manager" />
+  <depend package="image_transport" />
+  <depend package="image_geometry" />
+  <depend package="sensor_msgs" />
+  <depend package="ps_engine" />
+  <depend package="openni" />
+  <depend package="dynamic_reconfigure" />
+  <depend package="eigen" />
+
+  <export>
+    <cpp cflags="-I${prefix}/include" lflags="-Wl,-rpath,${prefix}/lib -L${prefix}/lib -lopenni_driver -lopenni_driver_nodelets" />
+    <nodelet plugin="${prefix}/openni_nodelets.xml" />
+  </export>
+
+  <platform os="ubuntu" version="10.04"/>
+  <platform os="ubuntu" version="10.10"/>
+</package>
