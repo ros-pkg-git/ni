@@ -1,7 +1,7 @@
 all: installed
 
 GIT_DIR = build/openni
-GIT_URL = https://ros-pkg-git@github.com/ros-pkg-git/OpenNI.git
+GIT_URL = https://github.com/ros-pkg-git/OpenNI.git
 #GIT_PATCH = redist.patch
 GIT_REVISION=master
 
