@@ -3,7 +3,7 @@
     PrimeSense Sensor Engine.
   </description>
 
-  <author>Maintained by Radu Bogdan Rusu, Ken Conley</author>
+  <author>ROS integration maintained by Radu Bogdan Rusu, Ken Conley. PrimeSense sensor engine is provided by PrimeSense.</author>
   <license>LGPL</license>
   <review status="beta" notes=""/>
   <url>http://www.openni.org/</url>

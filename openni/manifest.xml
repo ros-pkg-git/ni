@@ -3,7 +3,7 @@
     PrimeSense OpenNI interface.
   </description>
 
-  <author>Maintained by Radu Bogdan Rusu, Ken Conley</author>
+  <author>ROS integration maintained by Radu Bogdan Rusu, Ken Conley.  OpenNI interface is provided by the OpenNI Organization.</author>
   <license>LGPL</license>
   <review status="beta" notes=""/>
   <url>http://www.openni.org/</url>
