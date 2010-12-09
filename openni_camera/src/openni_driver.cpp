@@ -58,8 +58,6 @@ typedef union
    long long_value;
 } RGBValue;
 
-const double OpenNIDriver::SHIFT_SCALE = 0.125;
-
 /** \brief Constructor */
 OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   : comm_nh_ (comm_nh),
@@ -110,7 +108,7 @@ OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   cloud2_.point_step = offset;
   cloud2_.row_step   = cloud2_.point_step * cloud2_.width;
   cloud2_.data.resize (cloud2_.row_step   * cloud2_.height);
-  cloud2_.is_dense = true;
+  cloud2_.is_dense = false;
 
   // Assemble the depth image data
   depth_image_.header.frame_id = openni_depth_frame;
@@ -129,7 +127,7 @@ OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   rgb_info_.header.frame_id = rgb_image_.header.frame_id; 
 
   // Read calibration parameters from disk
-  std::string cam_name, rgb_info_url, depth_info_url;
+  /*std::string cam_name, rgb_info_url, depth_info_url;
   param_nh.param ("camera_name", cam_name, std::string("camera"));
   param_nh.param ("rgb/camera_info_url", rgb_info_url, std::string("auto"));
   param_nh.param ("depth/camera_info_url", depth_info_url, std::string("auto"));
@@ -194,8 +192,8 @@ OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   // Putting it all together, from (u,v,d,1) in depth image to (u,v,w) in RGB image
   depth_to_rgb_ = P*S*Q;
 
-  std::cout << "Transform matrix:" << std::endl << depth_to_rgb_ << std::endl << std::endl;
-
+  //std::cout << "Transform matrix:" << std::endl << depth_to_rgb_ << std::endl << std::endl;
+  */
   // Publishers and subscribers
   image_transport::ImageTransport it(comm_nh);
   pub_rgb_     = it.advertiseCamera ("rgb/image_raw", 1);
@@ -208,14 +206,14 @@ OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   pub_imu_ = comm_nh.advertise<sensor_msgs::Imu>("imu", 15);
 }
 
-/** \brief Initialize a openni device, given an index.
+/** \brief Initialize an OpenNI device, given an index.
   * \param index the index of the device to initialize
   */
 bool
-  OpenNIDriver::init (int index)
+OpenNIDriver::init (int index)
 {
   // TODO: switch between several devices based on the index
-  // (the current OpenNI interface doesn't support this)
+  // (the current OpenNI interface doesn't support this atm)
 
   // Create a DepthGenerator node
   rc_ = depth_.Create (context_);
@@ -233,8 +231,8 @@ bool
 
   // Set the correct mode on the depth/image generator
   XnMapOutputMode mode;
-  mode.nXRes = width_;
-  mode.nYRes = height_;
+  mode.nXRes = 640;
+  mode.nYRes = 480;
   mode.nFPS  = 30;
   rc_ = depth_.SetMapOutputMode (mode);
   rc_ = image_.SetMapOutputMode (mode);
@@ -279,7 +277,9 @@ bool
   return (true);
 }
 
-bool OpenNIDriver::spin ()
+/** \brief Spin loop. */
+bool 
+OpenNIDriver::spin ()
 {
   if (!started_)
     return (false);
@@ -315,7 +315,7 @@ OpenNIDriver::~OpenNIDriver ()
 
 /** \brief Start (resume) the data acquisition process. */
 bool
-  OpenNIDriver::start ()
+OpenNIDriver::start ()
 {
   started_ = false;
   // Make OpenNI start generating data
@@ -333,13 +333,15 @@ bool
 
 /** \brief Stop (pause) the data acquisition process. */
 void 
-  OpenNIDriver::stop ()
+OpenNIDriver::stop ()
 {
   context_.StopGeneratingAll ();
   started_ = false;
 }
 
-void OpenNIDriver::publish ()
+/** \brief Take care of putting data in the correct ROS message formats. */
+void 
+OpenNIDriver::publish ()
 {
   ros::Time time = ros::Time::now ();
   cloud_.header.stamp = cloud2_.header.stamp = time;
@@ -354,16 +356,7 @@ void OpenNIDriver::publish ()
     pub_rgb_.publish (boost::make_shared<const sensor_msgs::Image> (rgb_image_), 
                       boost::make_shared<const sensor_msgs::CameraInfo> (rgb_info_)); 
   }
-/*
-  // Rectify the RGB image if necessary
-  cv::Mat rgb_raw(height_, width_, CV_8UC3, rgb_buf_);
-  cv::Mat rgb_rect;
-  if (pub_depth_points_.getNumSubscribers () > 0 ||
-      pub_depth_points2_.getNumSubscribers () > 0)
-    rgb_model_.rectifyImage(rgb_raw, rgb_rect);
-  double fT = depth_model_.fx() * baseline_;
-  }
-*/  
+  // Fill in the PointCloud2 structure
   if (pub_depth_points2_.getNumSubscribers () > 0)
   {
     // Assemble an awesome sensor_msgs/PointCloud2 message
@@ -372,6 +365,9 @@ void OpenNIDriver::publish ()
     
     float* pt_data = reinterpret_cast<float*>(&cloud2_.data[0] );
     float constant = pixel_size_ * 0.001 / F_;
+    RGBValue color;
+    color.Alpha = 0;
+
     for (int v = 0; v < height_; ++v)
     {
       for (int u = 0; u < width_; ++u, ++k, pt_data += 4) 
@@ -394,11 +390,9 @@ void OpenNIDriver::publish ()
         pt_data[2] = depth_md_[k] * 0.001;
 
         // Fill in color
-        RGBValue color;
         color.Red   = rgb_buf_[ k * 3 ];
         color.Green = rgb_buf_[ k * 3 + 1];
         color.Blue  = rgb_buf_[ k * 3 + 2];
-        color.Alpha = 0;
         pt_data[3] = color.float_value;
       }
     }
@@ -409,13 +403,14 @@ void OpenNIDriver::publish ()
   { 
     // Fill in the depth image data
     // iterate over all elements and fill disparity matrix: disp[x,y] = f * b / z_distance[x,y];
+    float constant = focal_length_ * baseline_ * 1000.0;
     float* pixel = reinterpret_cast<float*>(&depth_image_.data[0]);
     for (register int i = 0; i < width_ * height_; ++i, ++pixel)
     {
       if (depth_md_[i] == 0 || depth_md_[i] == no_sample_value_ || depth_md_[i] == shadow_value_)
         *pixel = 0.0;
       else
-        *pixel = focal_length_ * baseline_ * 1000.0 / (double)depth_md_[i];
+        *pixel = constant / (double)depth_md_[i];
     }
 
     // Publish depth Image
@@ -449,7 +444,7 @@ void OpenNIDriver::publishImu()
 void OpenNIDriver::configCb (Config &config, uint32_t level)
 {
     rgb_image_.encoding = sensor_msgs::image_encodings::RGB8;
-    rgb_image_.data.resize (width_ * height_ * 4);
+    rgb_image_.data.resize (width_ * height_ * 3);
     rgb_image_.step = width_ * 3;
   /// @todo Integrate init() in here, so can change device and not worry about first config call
   
