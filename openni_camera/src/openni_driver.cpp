@@ -371,12 +371,12 @@ void OpenNIDriver::publish ()
     int k = 0;
     
     float* pt_data = reinterpret_cast<float*>(&cloud2_.data[0] );
+    float constant = pixel_size_ * 0.001 / F_;
     for (int v = 0; v < height_; ++v)
     {
-      for (int u = 0; u < width_; ++u, ++k, pt_data += 4 /*cloud2_.step*/) 
+      for (int u = 0; u < width_; ++u, ++k, pt_data += 4) 
       {
-        //float* pt_data = reinterpret_cast<float*>(&cloud2_.data[0] + k * cloud2_.point_step);
-
+        // Check for invalid measurements
         if (depth_md_[k] == 0 || depth_md_[k] == no_sample_value_ || depth_md_[k] == shadow_value_)
         {
           // not valid
@@ -389,11 +389,11 @@ void OpenNIDriver::publish ()
         }
 
         // Fill in XYZ
-        pt_data[0] = (u - 320) * pixel_size_ * depth_md_[k] * 0.001 / F_ ;
-        pt_data[1] = (v - 240) * pixel_size_ * depth_md_[k] * 0.001 / F_ ;
+        pt_data[0] = (u - 320) * depth_md_[k] * constant;
+        pt_data[1] = (v - 240) * depth_md_[k] * constant;
         pt_data[2] = depth_md_[k] * 0.001;
 
-        // Fill in coolor
+        // Fill in color
         RGBValue color;
         color.Red   = rgb_buf_[ k * 3 ];
         color.Green = rgb_buf_[ k * 3 + 1];
