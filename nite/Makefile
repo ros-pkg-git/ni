@@ -25,7 +25,7 @@ $(INSTALL_DIR)/installed: $(SOURCE_DIR)/unpacked
 	mkdir -p $(INSTALL_DIR)/XnVHandGenerator
 	cp $(SOURCE_DIR)/XnVHandGenerator/Data/* $(INSTALL_DIR)/XnVHandGenerator
 	rosrun openni niReg $(INSTALL_DIR)/lib/libXnVHandGenerator.so $(INSTALL_DIR)/XnVHandGenerator
-	#rosrun openni niLicense PrimeSense 0KOIk2JeIBYClPWVnMoRKn5cdY4=
+	rosrun openni niLicense PrimeSense 0KOIk2JeIBYClPWVnMoRKn5cdY4=
 	touch $(INSTALL_DIR)/installed
 
 clean:

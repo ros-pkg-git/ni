@@ -14,6 +14,7 @@ installed: $(GIT_DIR)
 	@-mkdir -p bin include/ni lib
 	@-cd $(GIT_DIR)/Source/OpenNI && \
 		sed -i -e 's/\/var\/lib\/ni\/modules.xml/$(OPENNI_LIB)\/modules.xml/g' XnModuleLoader.cpp && \
+		sed -i -e 's/\/var\/lib\/ni\/licenses.xml/$(OPENNI_LIB)\/licenses.xml/g' XnLicensing.cpp 
 		cd -
 	@-cd $(GIT_DIR)/Samples && \
 		sed -i -e 's/..\/..\/..\/..\/Data\/SamplesConfig.xml/$(OPENNI_LIB)\/SamplesConfig.xml/g' NiAudioSample/NiAudioSample.cpp && \
