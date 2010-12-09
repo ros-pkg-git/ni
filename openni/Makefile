@@ -49,6 +49,7 @@ installed: $(GIT_DIR)
 	@echo "### Patching the location of modules.xml..."
 	@-cd $(GIT_DIR)/Source/OpenNI && \
 		sed -i -e 's/\/var\/lib\/ni\/modules.xml/$(OPENNI_LIB)\/modules.xml/g' XnModuleLoader.cpp && \
+		sed -i -e 's/\/var\/lib\/ni\/licenses.xml/$(OPENNI_LIB)\/licenses.xml/g' XnLicensing.cpp 
 		cd -
 	@echo "### Patching the location of SamplesConfig.xml..."
 	@-cd $(GIT_DIR)/Samples && \

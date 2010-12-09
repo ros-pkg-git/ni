@@ -1,0 +1,14 @@
+<package>
+  <description brief="nite">
+
+     ROS wrapper for PrimeSense Nite middleware (x86-64 Linux binary).
+
+  </description>
+  <author>Maintained by Ken Conley. Nite binary from PrimeSense.</author>
+  <license>BSD</license>
+  <review status="unreviewed" notes=""/>
+  <url>http://ros.org/wiki/nite</url>
+
+</package>
+
+
