@@ -8,7 +8,14 @@
   <author>Maintained by Radu Bogdan Rusu, Ken Conley</author>
   <license>BSD,LGPL</license>  
   <review status="unreviewed" notes=""/>
-  <url>http://ros.org/wiki/ROS</url>
-  <depend stack="ros" />
+  <url>http://ros.org/wiki/ni</url>
+  <depend stack="camera_drivers" /> <!-- camera_info_manager -->
+  <depend stack="common" /> <!-- nodelet -->
+  <depend stack="common_msgs" /> <!-- sensor_msgs -->
+  <depend stack="driver_common" /> <!-- dynamic_reconfigure -->
+  <depend stack="geometry" /> <!-- eigen -->
+  <depend stack="image_common" /> <!-- image_transport -->
+  <depend stack="ros" /> <!-- roscpp -->
+  <depend stack="vision_opencv" /> <!-- image_geometry -->
 
 </stack>
