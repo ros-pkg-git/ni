@@ -39,20 +39,14 @@ installed: $(GIT_DIR)
 	@-cd $(GIT_DIR)/Platform/$(PLATFORM)/Build/Utils && \
 		sed -i -e 's/\/usr\/include\/ni\/CommonMakefile/$(OPENNI_INCLUDE)\/ni\/CommonMakefile/g' EngineUtilMakefile && \
 		sed -i -e 's/\/usr\/include/$(OPENNI_INCLUDE)/g' EngineUtilMakefile && \
-		sed -i -e 's/BIN_DIR/LIB_DIRS=$(OPENNI_LIB)\nBIN_DIR/g' EngineUtilMakefile && \
 		cd -
 	cd $(GIT_DIR)/Platform/$(PLATFORM)/Build && make && cd -
-	return
-	@cp -r $(GIT_DIR)/Platform/$(PLATFORM)/Redist/Bin/* bin/
 	@cp -r $(GIT_DIR)/Data/GlobalDefaults.ini lib/
-	@cp -r $(GIT_DIR)/Platform/$(PLATFORM)/Redist/Lib/* lib/
-	@cp -r $(GIT_DIR)/Platform/$(PLATFORM)/Redist/Config/* config/
-	@cp -r $(GIT_DIR)/Platform/$(PLATFORM)/Redist/Install/* install/
-	@-cd bin && ln -s ../lib/* . && ln -s `rospack find openni`/lib/* . && cd -
-	touch installed
-	for file in `cat $(GIT_DIR)/Platform/$(PLATFORM)/Redist/install.sh | grep MODULES= | sed 's/\"//g' | awk -F "=" {'print $$2'}`; do \
+	@cp -r $(GIT_DIR)/Platform/$(PLATFORM)/Install/* install/
+	for file in `cat $(GIT_DIR)/Platform/$(PLATFORM)/CreateRedist/install.sh | grep MODULES= | sed 's/\"//g' | awk -F "=" {'print $$2'}`; do \
 		LD_LIBRARY_PATH=`rospack find openni`/lib rosrun openni niReg -r `pwd`/lib/$$file lib; \
 	done
+	touch installed
 #	@$(foreach file,\
 #		$(shell echo $$(eval cat $(GIT_DIR)/Platform/$(PLATFORM)/Redist/install.sh | grep MODULES= | sed 's/\"//g' | awk -F "=" {'print $$2'})),\
 #		LD_LIBRARY_PATH=`rospack find openni`/lib rosrun openni niReg -r `pwd`/lib/$(file) lib;)
