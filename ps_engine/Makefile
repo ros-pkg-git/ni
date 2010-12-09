@@ -42,7 +42,6 @@ installed: $(GIT_DIR)
 		cd -
 	cd $(GIT_DIR)/Platform/$(PLATFORM)/Build && make && cd -
 	@cp -r $(GIT_DIR)/Data/GlobalDefaults.ini lib/
-	@cp -r $(GIT_DIR)/Platform/$(PLATFORM)/Install/* install/
 	for file in `cat $(GIT_DIR)/Platform/$(PLATFORM)/CreateRedist/install.sh | grep MODULES= | sed 's/\"//g' | awk -F "=" {'print $$2'}`; do \
 		LD_LIBRARY_PATH=`rospack find openni`/lib rosrun openni niReg -r `pwd`/lib/$$file lib; \
 	done
