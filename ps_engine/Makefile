@@ -15,7 +15,7 @@ PLATFORM=Linux-x86
 include $(shell rospack find mk)/git_checkout.mk
 
 installed: $(GIT_DIR)
-	@-mkdir -p bin lib config install
+	@-mkdir -p bin lib config 
 	@echo "### Patching the main Makefile for OpenNI..."
 	@cd $(GIT_DIR)/Platform/$(PLATFORM)/Build && \
 		sed -i -e 's/CFG=$$(CFG)//g' Makefile && \
@@ -49,8 +49,8 @@ installed: $(GIT_DIR)
 clean:
 	-cd $(GIT_DIR)/Platform/$(PLATFORM)/Build && make clean && cd -
 	rm -rf $(GIT_DIR)/Platform/$(PLATFORM)/CreateRedist/Final/*
-	rm -rf bin lib config install installed
+	rm -rf bin lib config installed
 
 wipe:
-	rm -rf bin lib config install installed
+	rm -rf bin lib config installed
 	rm -rf build patched rospack_nosubdirs
