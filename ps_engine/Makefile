@@ -15,14 +15,14 @@ PLATFORM=Linux-x86
 include $(shell rospack find mk)/git_checkout.mk
 
 installed: $(GIT_DIR)
-	@-mkdir -p bin lib config install
+	@-mkdir -p bin lib config 
 	@echo "### Patching the main Makefile for OpenNI..."
 	@cd $(GIT_DIR)/Platform/$(PLATFORM)/Build && \
 		sed -i -e 's/CFG=$$(CFG)//g' Makefile && \
 		cd -
 	@echo "### Patching the output library for the core libraries..."
 	@cd $(GIT_DIR)/Platform/$(PLATFORM)/Build && \
-		sed -i -e 's/BIN_DIR = ..\/..\/Bin/CFG=lib\nCFLAGS+=-O3 -msse3\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB)\nLIB_DIRS=$(OPENNI_LIB)\nBIN_DIR=$(ENGINE)/g' EngineLibMakefile && \
+		sed -i -e 's/BIN_DIR = ..\/..\/Bin/CFG=lib\nCFLAGS+=-O3 -msse3\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB) -Wl,-rpath,$(ENGINE_LIB)\nLIB_DIRS=$(OPENNI_LIB)\nBIN_DIR=$(ENGINE)/g' EngineLibMakefile && \
 		sed -i -e 's/\/usr\/include\/ni\/CommonMakefile/$(OPENNI_INCLUDE)\/ni\/CommonMakefile/g' EngineLibMakefile && \
 		sed -i -e 's/\/usr\/include/$(OPENNI_INCLUDE)/g' EngineLibMakefile && \
 		cd -
@@ -49,8 +49,8 @@ installed: $(GIT_DIR)
 clean:
 	-cd $(GIT_DIR)/Platform/$(PLATFORM)/Build && make clean && cd -
 	rm -rf $(GIT_DIR)/Platform/$(PLATFORM)/CreateRedist/Final/*
-	rm -rf bin lib config install installed
+	rm -rf bin lib config installed
 
 wipe:
-	rm -rf bin lib config install installed
+	rm -rf bin lib config installed
 	rm -rf build patched rospack_nosubdirs

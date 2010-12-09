@@ -214,7 +214,9 @@ OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
 bool
   OpenNIDriver::init (int index)
 {
-// TODO: switch between several devices based on the index
+  // TODO: switch between several devices based on the index
+  // (the current OpenNI interface doesn't support this)
+
   // Create a DepthGenerator node
   rc_ = depth_.Create (context_);
   if (rc_ != XN_STATUS_OK)

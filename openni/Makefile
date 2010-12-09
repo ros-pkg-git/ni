@@ -23,9 +23,9 @@ installed: $(GIT_DIR)
 		cd -
 	@echo "### Patching the output library for all library Modules..."
 	@cd $(GIT_DIR)/Platform/$(PLATFORM)/Build/Modules && \
-		sed -i -e 's/BIN_DIR = ..\/..\/..\/Bin/CFG=lib\nCFLAGS+=-O3 -msse3\nBIN_DIR=$(OPENNI)/g' nimCodecs/Makefile && \
-		sed -i -e 's/BIN_DIR = ..\/..\/..\/Bin/CFG=lib\nCFLAGS+=-O3 -msse3\nBIN_DIR=$(OPENNI)/g' nimMockNodes/Makefile && \
-		sed -i -e 's/BIN_DIR = ..\/..\/..\/Bin/CFG=lib\nCFLAGS+=-O3 -msse3\nBIN_DIR=$(OPENNI)/g' nimRecorder/Makefile && \
+		sed -i -e 's/BIN_DIR = ..\/..\/..\/Bin/CFG=lib\nCFLAGS+=-O3 -msse3\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB)\nBIN_DIR=$(OPENNI)/g' nimCodecs/Makefile && \
+		sed -i -e 's/BIN_DIR = ..\/..\/..\/Bin/CFG=lib\nCFLAGS+=-O3 -msse3\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB)\nBIN_DIR=$(OPENNI)/g' nimMockNodes/Makefile && \
+		sed -i -e 's/BIN_DIR = ..\/..\/..\/Bin/CFG=lib\nCFLAGS+=-O3 -msse3\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB)\nBIN_DIR=$(OPENNI)/g' nimRecorder/Makefile && \
 		cd -
 	@echo "### Patching the output location for all samples..."
 	@cd $(GIT_DIR)/Platform/$(PLATFORM)/Build/Samples && \
