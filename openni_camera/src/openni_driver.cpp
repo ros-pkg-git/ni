@@ -269,6 +269,13 @@ bool
   if (image_.SetIntProperty ("InputFormat", 6) != XN_STATUS_OK)
     ROS_ERROR ("[OpenNIDriver] Error setting the RGB output format to Uncompressed 8-bit BAYER!");
 
+#if 0
+  if (image_.SetPixelFormat(XN_PIXEL_FORMAT_RGB24) != XN_STATUS_OK)
+    ROS_ERROR ("[OpenNIDriver] Error setting the RGB pixel format to RGB24!");
+#endif
+  /// @todo Figure out PrimeSense color situation. Always returning YUV?
+  ROS_INFO("XN_PIXEL_FORMAT_RGB24 = %d", XN_PIXEL_FORMAT_RGB24);
+
   XnUInt64 fps;
   depth_.GetIntProperty ("FPS", fps);
   ROS_INFO_STREAM ("[OpenNIDriver] FPS: " << fps);
@@ -295,6 +302,7 @@ bool OpenNIDriver::spin ()
     // Take current RGB and depth map
     depth_buf_ = depth_.GetDepthMap ();
     rgb_buf_   = image_.GetImageMap ();
+    ROS_INFO("RGB pixel format = %d", image_.GetPixelFormat());
     // And publish them
     publish ();
 
