@@ -1,0 +1,6 @@
+<launch>
+  <env name="XN_SENSOR_PRODUCT_ID" value="0x2AE" />
+  <env name="XN_SENSOR_VENDOR_ID" value="0x45E" />
+  <env name="LD_LIBRARY_PATH" value="." />
+  <node pkg="openni_camera" type="openni_node" name="openni_camera" output="screen" />
+</launch>
