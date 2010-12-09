@@ -60,10 +60,10 @@ installed: $(GIT_DIR)
 		sed -i -e 's/..\/..\/..\/..\/Data\/SamplesConfig.xml/$(OPENNI_LIB)\/SamplesConfig.xml/g' NiSimpleRead/NiSimpleRead.cpp && \
 		sed -i -e 's/..\/..\/..\/..\/Data\/SamplesConfig.xml/$(OPENNI_LIB)\/SamplesConfig.xml/g' NiUserTracker/main.cpp && \
 		cd -
-	cd $(GIT_DIR)/Platform/$(PLATFORM)/Build && make && cd -
+#	cd $(GIT_DIR)/Platform/$(PLATFORM)/Build && make && cd -
 	@cp -r $(GIT_DIR)/Include/* include/ni
 	@cp $(GIT_DIR)/Data/SamplesConfig.xml lib/
-	@cp $(GIT_DIR)/Platform/$(PLATFORM)/CommonMakefile include/ni/
+	@cp $(GIT_DIR)/Platform/$(PLATFORM)/Build/CommonMakefile include/ni/
 	@echo "### Register all modules..."
 	for file in `cat $(GIT_DIR)/Platform/$(PLATFORM)/CreateRedist/install.sh | grep MODULES= | sed 's/\"//g' | awk -F "=" {'print $$2'}`; do \
 		LD_LIBRARY_PATH=`rospack find openni`/lib rosrun openni niReg -r `pwd`/lib/$$file lib; \
