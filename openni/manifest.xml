@@ -15,5 +15,6 @@
   <platform os="ubuntu" version="10.04"/>
   <platform os="ubuntu" version="10.10"/>
 
-  <rosdep name="libusb-dev" />
+  <rosdep name="libusb1.0" />
+  <rosdep name="git" />
 </package>
