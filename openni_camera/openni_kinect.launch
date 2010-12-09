@@ -2,5 +2,10 @@
   <env name="XN_SENSOR_PRODUCT_ID" value="0x2AE" />
   <env name="XN_SENSOR_VENDOR_ID" value="0x45E" />
   <env name="XN_HOST_PROTOCOL_ALGORITHM_REGISTRATION" value="0x40" />
-  <node pkg="openni_camera" type="openni_node" name="openni_camera" output="screen" />
+  <node pkg="openni_camera" type="openni_node" name="openni_camera" output="screen" >
+    <!--remap from="camera" to="openni" /-->
+    <param name="registration_type" value="2" />
+    <param name="image_input_format" value="6" />
+    <rosparam command="load" file="$(find openni_camera)/info/openni_params.yaml" />
+  </node>
 </launch>

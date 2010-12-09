@@ -112,6 +112,7 @@ namespace openni_camera
    private:
       /** \brief A copy of the communication NodeHandle. */
       ros::NodeHandle comm_nh_;
+      ros::NodeHandle param_nh_;
 
       /** \brief Internal mutex. */
       boost::mutex buffer_mutex_;

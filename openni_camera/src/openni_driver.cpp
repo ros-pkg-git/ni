@@ -62,7 +62,7 @@ const double OpenNIDriver::SHIFT_SCALE = 0.125;
 
 /** \brief Constructor */
 OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
-  : comm_nh_ (comm_nh),
+  : comm_nh_ (comm_nh), param_nh_ (param_nh),
     reconfigure_server_(param_nh),
     width_ (640), height_ (480),
     started_(false), shadow_value_ (0), no_sample_value_ (0)
@@ -221,13 +221,13 @@ bool
   rc_ = depth_.Create (context_);
   if (rc_ != XN_STATUS_OK)
   {
-    ROS_ERROR ("[OpenNIDriver] %s", xnGetStatusString (rc_));
+    ROS_ERROR ("[OpenNIDriver] Failed to create DepthGenerator: %s", xnGetStatusString (rc_));
     return (false);
   }
   rc_ = image_.Create (context_);
   if (rc_ != XN_STATUS_OK)
   {
-    ROS_ERROR ("[OpenNIDriver] %s", xnGetStatusString (rc_));
+    ROS_ERROR ("[OpenNIDriver] Failed to create ImageGenerator: %s", xnGetStatusString (rc_));
     return (false);
   }
 
@@ -268,21 +268,26 @@ bool
   if (depth_.GetIntProperty ("NoSampleValue", no_sample_value_) != XN_STATUS_OK)
     ROS_WARN ("[OpenNIDriver] Could not read no sample value!");
 
-  if (image_.SetIntProperty ("InputFormat", 6) != XN_STATUS_OK)
-    ROS_ERROR ("[OpenNIDriver] Error setting the RGB output format to Uncompressed 8-bit BAYER!");
+  /// @todo Just have a "kinect_mode" parameter to flip all the switches?
+  // RegistrationType should be 2 (software) for Kinect, 1 (hardware) for PS
+  int registration_type = 0;
+  if (param_nh_.getParam("registration_type", registration_type)) {
+    if (depth_.SetIntProperty ("RegistrationType", registration_type) != XN_STATUS_OK)
+      ROS_WARN ("[OpenNIDriver] Error enabling registration!");
+  }
 
-#if 0
-  if (image_.SetPixelFormat(XN_PIXEL_FORMAT_RGB24) != XN_STATUS_OK)
-    ROS_ERROR ("[OpenNIDriver] Error setting the RGB pixel format to RGB24!");
-#endif
-  /// @todo Figure out PrimeSense color situation. Always returning YUV?
-  ROS_INFO("XN_PIXEL_FORMAT_RGB24 = %d", XN_PIXEL_FORMAT_RGB24);
+  // InputFormat should be 6 for Kinect, 5 for PS
+  int image_input_format = 0;
+  if (param_nh_.getParam("image_input_format", image_input_format)) {
+    if (image_.SetIntProperty ("InputFormat", image_input_format) != XN_STATUS_OK)
+      ROS_ERROR ("[OpenNIDriver] Error setting the RGB output format to Uncompressed 8-bit BAYER!");
+  }
 
   XnUInt64 fps;
   depth_.GetIntProperty ("FPS", fps);
   ROS_INFO_STREAM ("[OpenNIDriver] FPS: " << fps);
 
-	depth_.GetAlternativeViewPointCap().SetViewPoint( image_ );
+  depth_.GetAlternativeViewPointCap().SetViewPoint( image_ );
   return (true);
 }
 
@@ -295,6 +300,7 @@ bool OpenNIDriver::spin ()
   {
     // Wait for new data to be available
     rc_ = context_.WaitOneUpdateAll (depth_);
+    //rc_ = context_.WaitAnyUpdateAll ();
     if (rc_ != XN_STATUS_OK)
     {
       ROS_ERROR ("[OpenNIDriver::spin] Error receiving data: %s", xnGetStatusString (rc_));
@@ -304,11 +310,10 @@ bool OpenNIDriver::spin ()
     // Take current RGB and depth map
     depth_buf_ = depth_.GetDepthMap ();
     rgb_buf_   = image_.GetImageMap ();
-    ROS_INFO("RGB pixel format = %d", image_.GetPixelFormat());
     // And publish them
     publish ();
 
-    // Spin for dynamic reconfigure
+    // Spin for ROS message processing
     ros::spinOnce ();
   }
   return (true);
