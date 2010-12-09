@@ -22,7 +22,7 @@ installed: $(GIT_DIR)
 		cd -
 	@echo "### Patching the output library for the core libraries..."
 	@cd $(GIT_DIR)/Platform/$(PLATFORM)/Build && \
-		sed -i -e 's/BIN_DIR = ..\/..\/Bin/CFG=lib\nCFLAGS+=-O3 -msse3\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB)\nLIB_DIRS=$(OPENNI_LIB)\nBIN_DIR=$(ENGINE)/g' EngineLibMakefile && \
+		sed -i -e 's/BIN_DIR = ..\/..\/Bin/CFG=lib\nCFLAGS+=-O3 -msse3\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB) -Wl,-rpath,$(ENGINE_LIB)\nLIB_DIRS=$(OPENNI_LIB)\nBIN_DIR=$(ENGINE)/g' EngineLibMakefile && \
 		sed -i -e 's/\/usr\/include\/ni\/CommonMakefile/$(OPENNI_INCLUDE)\/ni\/CommonMakefile/g' EngineLibMakefile && \
 		sed -i -e 's/\/usr\/include/$(OPENNI_INCLUDE)/g' EngineLibMakefile && \
 		cd -
