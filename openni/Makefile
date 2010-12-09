@@ -5,6 +5,7 @@ GIT_URL = https://github.com/OpenNI/OpenNI.git
 #GIT_PATCH = redist.patch
 GIT_REVISION=master
 
+OPENNI=$(shell echo $$(eval rospack find openni | sed 's/\//\\\//g'))
 OPENNI_LIB=$(shell echo $$(eval rospack find openni | sed 's/\//\\\//g')\\/lib)
 PLATFORM=Linux-x86
 
@@ -12,9 +13,44 @@ include $(shell rospack find mk)/git_checkout.mk
 
 installed: $(GIT_DIR)
 	@-mkdir -p bin include/ni lib
+	@echo "### Patching the main Makefile for OpenNI..."
+	@cd $(GIT_DIR)/Platform/$(PLATFORM)/Build && \
+		sed -i -e 's/CFG=$$(CFG)//g' Makefile && \
+		cd -
+	@echo "### Patching the output library for OpenNI..."
+	@cd $(GIT_DIR)/Platform/$(PLATFORM)/Build/OpenNI && \
+		sed -i -e 's/BIN_DIR = ..\/..\/Bin/CFG=lib\nCFLAGS+=-O3 -msse3\nBIN_DIR=$(OPENNI)/g' Makefile && \
+		cd -
+	@echo "### Patching the output library for all library Modules..."
+	@cd $(GIT_DIR)/Platform/$(PLATFORM)/Build/Modules && \
+		sed -i -e 's/BIN_DIR = ..\/..\/..\/Bin/CFG=lib\nCFLAGS+=-O3 -msse3\nBIN_DIR=$(OPENNI)/g' nimCodecs/Makefile && \
+		sed -i -e 's/BIN_DIR = ..\/..\/..\/Bin/CFG=lib\nCFLAGS+=-O3 -msse3\nBIN_DIR=$(OPENNI)/g' nimMockNodes/Makefile && \
+		sed -i -e 's/BIN_DIR = ..\/..\/..\/Bin/CFG=lib\nCFLAGS+=-O3 -msse3\nBIN_DIR=$(OPENNI)/g' nimRecorder/Makefile && \
+		cd -
+	@echo "### Patching the output location for all samples..."
+	@cd $(GIT_DIR)/Platform/$(PLATFORM)/Build/Samples && \
+		sed -i -e 's/BIN_DIR = ..\/..\/..\/Bin/CFG=bin\nCFLAGS+=-O3 -msse3\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB)\nLIB_DIRS=$(OPENNI_LIB)\nBIN_DIR=$(OPENNI)/g' NiViewer/Makefile && \
+		sed -i -e 's/BIN_DIR = ..\/..\/..\/Bin/CFG=bin\nCFLAGS+=-O3 -msse3\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB)\nLIB_DIRS=$(OPENNI_LIB)\nBIN_DIR=$(OPENNI)/g' NiAudioSample/Makefile && \
+		sed -i -e 's/BIN_DIR = ..\/..\/..\/Bin/CFG=bin\nCFLAGS+=-O3 -msse3\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB)\nLIB_DIRS=$(OPENNI_LIB)\nBIN_DIR=$(OPENNI)/g' NiBackRecorder/Makefile && \
+		sed -i -e 's/BIN_DIR = ..\/..\/..\/Bin/CFG=bin\nCFLAGS+=-O3 -msse3\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB)\nLIB_DIRS=$(OPENNI_LIB)\nBIN_DIR=$(OPENNI)/g' NiConvertXToONI/Makefile && \
+		sed -i -e 's/BIN_DIR = ..\/..\/..\/Bin/CFG=bin\nCFLAGS+=-O3 -msse3\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB)\nLIB_DIRS=$(OPENNI_LIB)\nBIN_DIR=$(OPENNI)/g' NiCRead/Makefile && \
+		sed -i -e 's/BIN_DIR = ..\/..\/..\/Bin/CFG=bin\nCFLAGS+=-O3 -msse3\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB)\nLIB_DIRS=$(OPENNI_LIB)\nBIN_DIR=$(OPENNI)/g' NiRecordSynthetic/Makefile && \
+		sed -i -e 's/BIN_DIR = ..\/..\/..\/Bin/CFG=bin\nCFLAGS+=-O3 -msse3\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB)\nLIB_DIRS=$(OPENNI_LIB)\nBIN_DIR=$(OPENNI)/g' NiSampleModule/Makefile && \
+		sed -i -e 's/BIN_DIR = ..\/..\/..\/Bin/CFG=bin\nCFLAGS+=-O3 -msse3\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB)\nLIB_DIRS=$(OPENNI_LIB)\nBIN_DIR=$(OPENNI)/g' NiSimpleCreate/Makefile && \
+		sed -i -e 's/BIN_DIR = ..\/..\/..\/Bin/CFG=bin\nCFLAGS+=-O3 -msse3\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB)\nLIB_DIRS=$(OPENNI_LIB)\nBIN_DIR=$(OPENNI)/g' NiSimpleRead/Makefile && \
+		sed -i -e 's/BIN_DIR = ..\/..\/..\/Bin/CFG=bin\nCFLAGS+=-O3 -msse3\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB)\nLIB_DIRS=$(OPENNI_LIB)\nBIN_DIR=$(OPENNI)/g' NiSimpleViewer/Makefile && \
+		sed -i -e 's/BIN_DIR = ..\/..\/..\/Bin/CFG=bin\nCFLAGS+=-O3 -msse3\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB)\nLIB_DIRS=$(OPENNI_LIB)\nBIN_DIR=$(OPENNI)/g' NiUserTracker/Makefile && \
+		cd -
+	@echo "### Patching the output location for all tools..."
+	@cd $(GIT_DIR)/Platform/$(PLATFORM)/Build/Utils && \
+		sed -i -e 's/BIN_DIR = ..\/..\/..\/Bin/CFG=bin\nCFLAGS+=-O3 -msse3\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB)\nLIB_DIRS=$(OPENNI_LIB)\nBIN_DIR=$(OPENNI)/g' niLicense/Makefile && \
+		sed -i -e 's/BIN_DIR = ..\/..\/..\/Bin/CFG=bin\nCFLAGS+=-O3 -msse3\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB)\nLIB_DIRS=$(OPENNI_LIB)\nBIN_DIR=$(OPENNI)/g' niReg/Makefile && \
+		cd -
+	@echo "### Patching the location of modules.xml..."
 	@-cd $(GIT_DIR)/Source/OpenNI && \
 		sed -i -e 's/\/var\/lib\/ni\/modules.xml/$(OPENNI_LIB)\/modules.xml/g' XnModuleLoader.cpp && \
 		cd -
+	@echo "### Patching the location of SamplesConfig.xml..."
 	@-cd $(GIT_DIR)/Samples && \
 		sed -i -e 's/..\/..\/..\/..\/Data\/SamplesConfig.xml/$(OPENNI_LIB)\/SamplesConfig.xml/g' NiAudioSample/NiAudioSample.cpp && \
 		sed -i -e 's/..\/..\/..\/..\/Data\/SamplesConfig.xml/$(OPENNI_LIB)\/SamplesConfig.xml/g' NiViewer/NiViewer.cpp && \
@@ -23,23 +59,15 @@ installed: $(GIT_DIR)
 		sed -i -e 's/..\/..\/..\/..\/Data\/SamplesConfig.xml/$(OPENNI_LIB)\/SamplesConfig.xml/g' NiSimpleRead/NiSimpleRead.cpp && \
 		sed -i -e 's/..\/..\/..\/..\/Data\/SamplesConfig.xml/$(OPENNI_LIB)\/SamplesConfig.xml/g' NiUserTracker/main.cpp && \
 		cd -
-	cd $(GIT_DIR)/Platform/$(PLATFORM)/Build && make redist && cd -
-	@cp -r $(GIT_DIR)/Platform/$(PLATFORM)/Redist/Bin/* bin/
-	@cp -r $(GIT_DIR)/Platform/$(PLATFORM)/Bin/Release/Sample* bin/
-	@cp -r $(GIT_DIR)/Platform/$(PLATFORM)/Bin/Release/NiViewer bin/
-	@cp -r $(GIT_DIR)/Platform/$(PLATFORM)/Redist/Lib/* lib/
-	@-cd bin && ln -s ../lib/* . && cd -
-	@cp -r $(GIT_DIR)/Platform/$(PLATFORM)/Redist/Include/* include/ni
+	cd $(GIT_DIR)/Platform/$(PLATFORM)/Build && make && cd -
+	@cp -r $(GIT_DIR)/Include/* include/ni
 	@cp $(GIT_DIR)/Data/SamplesConfig.xml lib/
-	for file in `cat $(GIT_DIR)/Platform/$(PLATFORM)/Redist/install.sh | grep MODULES= | sed 's/\"//g' | awk -F "=" {'print $$2'}`; do \
+	@echo "### Register all modules..."
+	for file in `cat $(GIT_DIR)/Platform/$(PLATFORM)/CreateRedist/install.sh | grep MODULES= | sed 's/\"//g' | awk -F "=" {'print $$2'}`; do \
 		LD_LIBRARY_PATH=`rospack find openni`/lib rosrun openni niReg -r `pwd`/lib/$$file lib; \
 	done
-#	@patch -p0 < includes.patch
 	touch installed
-#	$(foreach file,\
-#		$(shell echo $$(eval cat $(GIT_DIR)/Platform/$(PLATFORM)/Redist/install.sh | grep MODULES= | sed 's/\"//g' | awk -F "=" {'print $$2'})),\
-#		LD_LIBRARY_PATH=`rospack find openni`/lib rosrun openni niReg -r `pwd`/lib/$(file) lib;)
-#	$(foreach file,$(wildcard lib/*.so),LD_LIBRARY_PATH=lib bin/niReg -r $(file) lib;)
+#	@patch -p0 < includes.patch
 
 clean:
 	-cd $(GIT_DIR)/Platform/$(PLATFORM)/Build && make clean && cd -
