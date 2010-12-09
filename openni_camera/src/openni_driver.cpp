@@ -327,10 +327,6 @@ bool
     return (false);
   }
 
-  // Turn on frame synchronization
-  if (depth_.SetIntProperty ("FrameSync", 0) != XN_STATUS_OK)
-    ROS_WARN ("[OpenNIDriver] Could not turn on frame synchronization!");
-
   started_ = true;
   return (true);
 }
