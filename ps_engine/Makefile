@@ -22,27 +22,21 @@ installed: $(GIT_DIR)
 		cd -
 	@echo "### Patching the output library for the core libraries..."
 	@cd $(GIT_DIR)/Platform/$(PLATFORM)/Build && \
-		sed -i -e 's/BIN_DIR = ..\/..\/Bin/CFG=lib\nCFLAGS+=-O3 -msse3\nBIN_DIR=$(ENGINE)/g' EngineLibMakefile && \
+		sed -i -e 's/BIN_DIR = ..\/..\/Bin/CFG=lib\nCFLAGS+=-O3 -msse3\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB)\nLIB_DIRS=$(OPENNI_LIB)\nBIN_DIR=$(ENGINE)/g' EngineLibMakefile && \
+		sed -i -e 's/\/usr\/include\/ni\/CommonMakefile/$(OPENNI_INCLUDE)\/ni\/CommonMakefile/g' EngineLibMakefile && \
+		sed -i -e 's/\/usr\/include/$(OPENNI_INCLUDE)/g' EngineLibMakefile && \
 		cd -
 	@echo "### Patching the output library for XnServer..."
 	@cd $(GIT_DIR)/Platform/$(PLATFORM)/Build/Utils && \
 		sed -i -e 's/BIN_DIR = ..\/..\/..\/Bin/CFG=bin\nCFLAGS+=-O3 -msse3\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB) -Wl,-rpath,$(ENGINE_LIB)\nLIB_DIRS=$(OPENNI_LIB) $(ENGINE_LIB)\nBIN_DIR=$(ENGINE)/g' EngineUtilMakefile && \
+		sed -i -e 's/\/usr\/include\/ni\/CommonMakefile/$(OPENNI_INCLUDE)\/ni\/CommonMakefile/g' EngineUtilMakefile && \
+		sed -i -e 's/\/usr\/include/$(OPENNI_INCLUDE)/g' EngineUtilMakefile && \
 		cd -
 	@-cd $(GIT_DIR)/Source/XnDeviceSensorV2 && \
 		sed -i -e 's/\/usr\/bin/$(ENGINE_BIN)/g' XnSensorClient.cpp && \
 		cd -
-	@-cd $(GIT_DIR)/Platform/$(PLATFORM)/Build && \
-		sed -i -e 's/\/usr\/include\/ni\/CommonMakefile/$(OPENNI_INCLUDE)\/ni\/CommonMakefile/g' EngineLibMakefile && \
-		sed -i -e 's/\/usr\/include/$(OPENNI_INCLUDE)/g' EngineLibMakefile && \
-		sed -i -e 's/BIN_DIR/LIB_DIRS=$(OPENNI_LIB)\nBIN_DIR/g' EngineLibMakefile && \
-		cd -
-	@-cd $(GIT_DIR)/Platform/$(PLATFORM)/Build/Utils && \
-		sed -i -e 's/\/usr\/include\/ni\/CommonMakefile/$(OPENNI_INCLUDE)\/ni\/CommonMakefile/g' EngineUtilMakefile && \
-		sed -i -e 's/\/usr\/include/$(OPENNI_INCLUDE)/g' EngineUtilMakefile && \
-		cd -
 	cd $(GIT_DIR)/Platform/$(PLATFORM)/Build && make && cd -
 	@cp -r $(GIT_DIR)/Data/GlobalDefaults.ini lib/
-	@cp -r $(GIT_DIR)/Platform/$(PLATFORM)/Install/* install/
 	for file in `cat $(GIT_DIR)/Platform/$(PLATFORM)/CreateRedist/install.sh | grep MODULES= | sed 's/\"//g' | awk -F "=" {'print $$2'}`; do \
 		LD_LIBRARY_PATH=`rospack find openni`/lib rosrun openni niReg -r `pwd`/lib/$$file lib; \
 	done
