@@ -31,7 +31,7 @@
   <depend package="eigen3" />
 
   <export>
-    <cpp cflags="-I${prefix}/include" lflags="-Wl,-rpath,${prefix}/lib -L${prefix}/lib -lopenni_driver -lopenni_driver_nodelets" />
+    <cpp cflags="-I${prefix}/include" lflags="-Wl,-rpath,${prefix}/lib -L${prefix}/lib -lopenni_driver -lopenni_nodelets" />
     <nodelet plugin="${prefix}/openni_nodelets.xml" />
   </export>
 
