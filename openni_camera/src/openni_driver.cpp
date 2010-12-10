@@ -319,7 +319,6 @@ OpenNIDriver::init (int index)
   depth_.GetIntProperty ("FPS", fps);
   ROS_INFO_STREAM ("[OpenNIDriver] FPS: " << fps);
 
-  depth_.GetAlternativeViewPointCap().SetViewPoint( image_ );
   return (true);
 }
 
@@ -373,6 +372,10 @@ OpenNIDriver::start ()
     ROS_ERROR ("[OpenNIDriver::start] Error in start (): %s", xnGetStatusString (rc_));
     return (false);
   }
+
+  // Note: For the PSDK5 device, the alternative viewpoint needs to be set after starting
+  // data generation, or the depth generation hangs.
+  depth_.GetAlternativeViewPointCap().SetViewPoint( image_ );
 
   started_ = true;
   return (true);
