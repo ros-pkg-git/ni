@@ -58,6 +58,10 @@ typedef union
    long long_value;
 } RGBValue;
 
+/// @todo With PrimeSense device, registered depth stream hangs when doing the code
+/// initialization, but works fine when initializing from XML. Weird.
+//#define FROM_XML
+
 /** \brief Constructor */
 OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   : comm_nh_ (comm_nh), param_nh_ (param_nh),
@@ -66,7 +70,15 @@ OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
     started_(false), shadow_value_ (0), no_sample_value_ (0)
 {
   // Init the OpenNI context
+#ifndef FROM_XML
+  //ROS_INFO("Initializing in code, no XML");
   rc_ = context_.Init ();
+#else
+  ROS_INFO("Initializing from XML");
+  std::string path = ros::package::getPath(ROS_PACKAGE_NAME) + "/SamplesConfig.xml";
+  xn::EnumerationErrors errors;
+  rc_ = context_.InitFromXmlFile(path.c_str(), &errors);
+#endif
 
   if (rc_ != XN_STATUS_OK)
   {
@@ -216,13 +228,21 @@ OpenNIDriver::init (int index)
   // (the current OpenNI interface doesn't support this atm)
 
   // Create a DepthGenerator node
+#ifndef FROM_XML
   rc_ = depth_.Create (context_);
+#else
+  rc_ = context_.FindExistingNode(XN_NODE_TYPE_DEPTH, depth_);
+#endif
   if (rc_ != XN_STATUS_OK)
   {
     ROS_ERROR ("[OpenNIDriver] Failed to create DepthGenerator: %s", xnGetStatusString (rc_));
     return (false);
   }
+#ifndef FROM_XML
   rc_ = image_.Create (context_);
+#else
+  rc_ = context_.FindExistingNode(XN_NODE_TYPE_IMAGE, image_);
+#endif
   if (rc_ != XN_STATUS_OK)
   {
     ROS_ERROR ("[OpenNIDriver] Failed to create ImageGenerator: %s", xnGetStatusString (rc_));
@@ -230,12 +250,22 @@ OpenNIDriver::init (int index)
   }
 
   // Set the correct mode on the depth/image generator
+#ifndef FROM_XML
   XnMapOutputMode mode;
   mode.nXRes = 640;
   mode.nYRes = 480;
   mode.nFPS  = 30;
-  rc_ = depth_.SetMapOutputMode (mode);
-  rc_ = image_.SetMapOutputMode (mode);
+  if (depth_.SetMapOutputMode (mode) != XN_STATUS_OK)
+  {
+    ROS_ERROR("[OpenNIDriver] Failed to set depth output mode");
+    return (false);
+  }
+  if (image_.SetMapOutputMode (mode) != XN_STATUS_OK)
+  {
+    ROS_ERROR("[OpenNIDriver] Failed to set image output mode");
+    return (false);
+  }
+#endif
 
   depth_.GetMetaData (depth_md_);
   image_.GetMetaData (image_md_);
