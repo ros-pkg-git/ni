@@ -12,3 +12,7 @@ set (EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
 include_directories (${CMAKE_CURRENT_BINARY_DIR})
 
 rosbuild_add_executable (openni_viewer src/openni_viewer.cpp)
+
+rosbuild_add_library (openni_pcl_nodelets src/openni_viewer_nodelet.cpp)
+rosbuild_add_compile_flags (openni_pcl_nodelets ${SSE_FLAGS})
+

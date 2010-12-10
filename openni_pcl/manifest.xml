@@ -18,8 +18,8 @@
   <depend package="openni_camera" />
 
   <export>
-    <cpp cflags="-I${prefix}/include" lflags="-Wl,-rpath,${prefix}/lib -L${prefix}/lib -openni_pcl" />
-    <nodelet plugin="${prefix}/openni_pcl.xml" />
+    <cpp cflags="-I${prefix}/include" lflags="-Wl,-rpath,${prefix}/lib -L${prefix}/lib -openni_pcl_nodelets" />
+    <nodelet plugin="${prefix}/openni_pcl_nodelets.xml" />
   </export>
 
   <platform os="ubuntu" version="10.04"/>

@@ -38,6 +38,9 @@
 
 #include <nodelet/nodelet.h>
 #include <boost/thread.hpp>
+#include <boost/thread/mutex.hpp>
+#include <ros/ros.h>
+#include <pcl_visualization/pcl_visualizer.h>
 
 namespace openni_pcl
 {
@@ -50,6 +53,21 @@ namespace openni_pcl
   
       /** \brief Spin. */
       void spin (); 
+
+      /** \brief PointCloud2 message callback. */
+      void cloud_cb (const sensor_msgs::PointCloud2ConstPtr& cloud);
+
+      /** \brief The ROS NodeHandle used for parameters, publish/subscribe, etc. */
+      boost::shared_ptr<ros::NodeHandle> pnh_;
+
+      /** \brief The input PointCloud2 subscriber. */
+      ros::Subscriber sub_;
+
+      /** \brief The PCLVisualizer object. */
+      boost::shared_ptr<pcl_visualization::PCLVisualizer> viewer_;
+
+      /** \brief Mutex. */
+      boost::mutex mutex_;
   };
 }
 
