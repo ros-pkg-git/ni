@@ -402,7 +402,7 @@ OpenNIDriver::publish ()
   if (pub_rgb_.getNumSubscribers () > 0)
   {
     rgb_image_.header.stamp = rgb_info_.header.stamp = time;
-    rgb_image_.data.insert (rgb_image_.data.end (), &rgb_buf_[0], rgb_buf_ + rgb_image_.data.size ());
+    memcpy (&rgb_image_.data[0], &rgb_buf_[0], rgb_image_.data.size ());
     pub_rgb_.publish (boost::make_shared<const sensor_msgs::Image> (rgb_image_), 
                       boost::make_shared<const sensor_msgs::CameraInfo> (rgb_info_)); 
   }
@@ -509,6 +509,7 @@ void OpenNIDriver::publishImu()
 void OpenNIDriver::configCb (Config &config, uint32_t level)
 {
     rgb_image_.encoding = sensor_msgs::image_encodings::RGB8;
+    rgb_image_.data.resize (width_ * height_ * 3);
     rgb_image_.step = width_ * 3;
   /// @todo Integrate init() in here, so can change device and not worry about first config call
   
@@ -516,12 +517,12 @@ void OpenNIDriver::configCb (Config &config, uint32_t level)
   /// @todo Mucking with image_ here might not be thread-safe
 /*  if (config.color_format == FORMAT_RGB) {
     rgb_image_.encoding = sensor_msgs::image_encodings::RGB8;
-    rgb_image_.data.resize (width_ * height_ * 4);
+    rgb_image_.data.resize (width_ * height_ * 3);
     rgb_image_.step = width_ * 3;
   }
   else if (config.color_format == FORMAT_IR) {
     rgb_image_.encoding = sensor_msgs::image_encodings::MONO8;
-    rgb_image_.data.resize (width_ * height_ * 4);
+    rgb_image_.data.resize (width_ * height_ * 3);
     rgb_image_.step = width_ * 3;
   }
   else {
