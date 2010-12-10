@@ -73,7 +73,7 @@ int
   main (int argc, char** argv)
 {
   ros::init (argc, argv, "openni_viewer");
-  ros::NodeHandle nh;
+  ros::NodeHandle nh ("~");
 
   // Get the queue size from the command line
   int queue_size = 15;
@@ -83,11 +83,12 @@ int
   // Create a ROS subscriber
   ros::Subscriber sub = nh.subscribe ("input", queue_size, cloud_cb);
 
+  ROS_INFO ("Subscribing to %s for PointCloud2 messages...", nh.resolveName ("input").c_str ());
+
   pcl_visualization::PCLVisualizer p (argc, argv, "OpenNI Kinect Viewer");
   pcl::PointCloud<Point> cloud_xyz;
   ColorHandlerPtr color_handler;
 
-  int color_handler_idx = 0;
   double psize = 0;
   while (nh.ok ())
   {
