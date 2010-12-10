@@ -258,6 +258,10 @@ OpenNIDriver::init (int index)
   else
     ROS_INFO_STREAM ("[OpenNIDriver] Base line: " << baseline_);
 
+  // baseline from cm -> meters
+  baseline_ *= 0.01;
+  
+  //focal length from mm -> pixels
   focal_length_ = (double)F_/pixel_size_;
 
   if (depth_.GetIntProperty ("ShadowValue", shadow_value_) != XN_STATUS_OK)
