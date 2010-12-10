@@ -395,7 +395,6 @@ OpenNIDriver::spin ()
 void 
 OpenNIDriver::publish ()
 {
-  boost::mutex::scoped_lock lock (buffer_mutex_);
   ros::Time time = ros::Time::now ();
 
   // Fill raw RGB image message
