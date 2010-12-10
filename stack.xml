@@ -13,9 +13,8 @@
   <depend stack="common" /> <!-- nodelet -->
   <depend stack="common_msgs" /> <!-- sensor_msgs -->
   <depend stack="driver_common" /> <!-- dynamic_reconfigure -->
-  <depend stack="geometry" /> <!-- eigen -->
   <depend stack="image_common" /> <!-- image_transport -->
+  <depend stack="perception_pcl" /> <!-- eigen3 -->
   <depend stack="ros" /> <!-- roscpp -->
-  <depend stack="vision_opencv" /> <!-- image_geometry -->
 
 </stack>
