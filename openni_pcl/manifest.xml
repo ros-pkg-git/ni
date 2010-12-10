@@ -14,6 +14,7 @@
   <review status="experimental" notes="beta"/>
 
   <depend package="pcl_ros" />
+  <depend package="pcl_visualization" />
   <depend package="openni_camera" />
 
   <export>

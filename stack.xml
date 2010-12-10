@@ -15,6 +15,7 @@
   <depend stack="driver_common" /> <!-- dynamic_reconfigure -->
   <depend stack="image_common" /> <!-- image_transport -->
   <depend stack="perception_pcl" /> <!-- eigen3, pcl_ros -->
+  <depend stack="perception_pcl_addons" /> <!-- pcl_visualization -->
   <depend stack="ros" /> <!-- roscpp -->
 
 </stack>
