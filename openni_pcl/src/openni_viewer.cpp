@@ -39,29 +39,14 @@
 #include <ros/ros.h>
 #include <boost/thread/mutex.hpp>
 // PCL includes
-#include <pcl/io/io.h>
-#include <pcl/io/pcd_io.h>
 #include <pcl/point_types.h>
-
-#include <pcl_ros/subscriber.h>
 #include <pcl_visualization/pcl_visualizer.h>
-#include <terminal_tools/print.h>
-#include <terminal_tools/parse.h>
-
-using namespace std;
-using terminal_tools::print_highlight;
-using terminal_tools::parse_argument;
-
-typedef pcl::PointXYZ Point;
-typedef pcl_visualization::PointCloudColorHandler<sensor_msgs::PointCloud2> ColorHandler;
-typedef ColorHandler::Ptr ColorHandlerPtr;
-typedef ColorHandler::ConstPtr ColorHandlerConstPtr;
 
 sensor_msgs::PointCloud2ConstPtr cloud_, cloud_old_;
 boost::mutex m;
 
 void
-  cloud_cb (const sensor_msgs::PointCloud2ConstPtr& cloud)
+cloud_cb (const sensor_msgs::PointCloud2ConstPtr& cloud)
 {
   m.lock ();
   cloud_ = cloud;
@@ -70,24 +55,19 @@ void
 
 /* ---[ */
 int
-  main (int argc, char** argv)
+main (int argc, char** argv)
 {
   ros::init (argc, argv, "openni_viewer");
   ros::NodeHandle nh ("~");
 
-  // Get the queue size from the command line
-  int queue_size = 15;
-  parse_argument (argc, argv, "-qsize", queue_size);
-  print_highlight ("Using a queue size of %d\n", queue_size);
-
   // Create a ROS subscriber
-  ros::Subscriber sub = nh.subscribe ("input", queue_size, cloud_cb);
+  ros::Subscriber sub = nh.subscribe ("input", 15, cloud_cb);
 
   ROS_INFO ("Subscribing to %s for PointCloud2 messages...", nh.resolveName ("input").c_str ());
 
   pcl_visualization::PCLVisualizer p (argc, argv, "OpenNI Kinect Viewer");
-  pcl::PointCloud<Point> cloud_xyz;
-  ColorHandlerPtr color_handler;
+  pcl::PointCloud<pcl::PointXYZ> cloud_xyz;
+  pcl_visualization::PointCloudColorHandler<sensor_msgs::PointCloud2>::Ptr color_handler;
 
   double psize = 0;
   while (nh.ok ())
