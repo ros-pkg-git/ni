@@ -14,7 +14,7 @@
   <depend stack="common_msgs" /> <!-- sensor_msgs -->
   <depend stack="driver_common" /> <!-- dynamic_reconfigure -->
   <depend stack="image_common" /> <!-- image_transport -->
-  <depend stack="perception_pcl" /> <!-- eigen3 -->
+  <depend stack="perception_pcl" /> <!-- eigen3, pcl_ros -->
   <depend stack="ros" /> <!-- roscpp -->
 
 </stack>
