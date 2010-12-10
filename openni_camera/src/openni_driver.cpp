@@ -219,6 +219,13 @@ OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   pub_imu_ = comm_nh.advertise<sensor_msgs::Imu>("imu", 15);
 }
 
+/** \brief Destructor */
+OpenNIDriver::~OpenNIDriver ()
+{
+  stop ();
+  context_.Shutdown ();
+}
+
 /** \brief Initialize an OpenNI device, given an index.
   * \param index the index of the device to initialize
   */
@@ -308,6 +315,8 @@ OpenNIDriver::init (int index)
   {
     if (depth_.SetIntProperty ("RegistrationType", registration_type) != XN_STATUS_OK)
       ROS_WARN ("[OpenNIDriver] Error enabling registration!");
+    if (depth_.SetIntProperty ("Registration", 0) != XN_STATUS_OK)
+      ROS_WARN ("[OpenNIDriver] Error enabling registration!");
   }
 
   // InputFormat should be 6 for Kinect, 5 for PS
@@ -324,6 +333,32 @@ OpenNIDriver::init (int index)
 
   depth_.GetAlternativeViewPointCap ().SetViewPoint (image_);
   return (true);
+}
+
+/** \brief Start (resume) the data acquisition process. */
+bool
+OpenNIDriver::start ()
+{
+  started_ = false;
+  // Make OpenNI start generating data
+  rc_ = context_.StartGeneratingAll ();
+
+  if (rc_ != XN_STATUS_OK)
+  {
+    ROS_ERROR ("[OpenNIDriver::start] Error in start (): %s", xnGetStatusString (rc_));
+    return (false);
+  }
+
+  started_ = true;
+  return (true);
+}
+
+/** \brief Stop (pause) the data acquisition process. */
+void 
+OpenNIDriver::stop ()
+{
+  context_.StopGeneratingAll ();
+  started_ = false;
 }
 
 /** \brief Spin loop. */
@@ -356,39 +391,6 @@ OpenNIDriver::spin ()
   return (true);
 }
 
-/** \brief Destructor */
-OpenNIDriver::~OpenNIDriver ()
-{
-  stop ();
-  context_.Shutdown ();
-}
-
-/** \brief Start (resume) the data acquisition process. */
-bool
-OpenNIDriver::start ()
-{
-  started_ = false;
-  // Make OpenNI start generating data
-  rc_ = context_.StartGeneratingAll ();
-
-  if (rc_ != XN_STATUS_OK)
-  {
-    ROS_ERROR ("[OpenNIDriver::start] Error in start (): %s", xnGetStatusString (rc_));
-    return (false);
-  }
-
-  started_ = true;
-  return (true);
-}
-
-/** \brief Stop (pause) the data acquisition process. */
-void 
-OpenNIDriver::stop ()
-{
-  context_.StopGeneratingAll ();
-  started_ = false;
-}
-
 /** \brief Take care of putting data in the correct ROS message formats. */
 void 
 OpenNIDriver::publish ()
@@ -417,9 +419,22 @@ OpenNIDriver::publish ()
     RGBValue color;
     color.Alpha = 0;
 
-    for (register int v = 0; v < height_; ++v)
+    // Re-adjust the PointCloud2 output if the size changed
+    if (depth_md_.XRes () != cloud2_.width)
     {
-      for (register int u = 0; u < width_; ++u, ++k, pt_data += 4) 
+      cloud2_.width = depth_md_.XRes ();
+      cloud2_.row_step   = cloud2_.point_step * cloud2_.width;
+      cloud2_.data.resize (cloud2_.row_step   * cloud2_.height);
+    }
+    if (depth_md_.YRes () != cloud2_.height)
+    {
+      cloud2_.height = depth_md_.YRes ();
+      cloud2_.data.resize (cloud2_.row_step   * cloud2_.height);
+    }
+
+    for (register int v = 0; v < cloud2_.height; ++v)
+    {
+      for (register int u = 0; u < cloud2_.width; ++u, ++k, pt_data += 4) 
       {
         // Check for invalid measurements
         if (depth_md_[k] == 0 || depth_md_[k] == no_sample_value_ || depth_md_[k] == shadow_value_)
