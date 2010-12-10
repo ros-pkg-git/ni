@@ -288,6 +288,10 @@ OpenNIDriver::init (int index)
   else
     ROS_INFO_STREAM ("[OpenNIDriver] Base line: " << baseline_);
 
+  // baseline from cm -> meters
+  baseline_ *= 0.01;
+  
+  //focal length from mm -> pixels
   focal_length_ = (double)F_/pixel_size_;
 
   if (depth_.GetIntProperty ("ShadowValue", shadow_value_) != XN_STATUS_OK)
@@ -411,9 +415,9 @@ OpenNIDriver::publish ()
     RGBValue color;
     color.Alpha = 0;
 
-    for (int v = 0; v < height_; ++v)
+    for (register int v = 0; v < height_; ++v)
     {
-      for (int u = 0; u < width_; ++u, ++k, pt_data += 4) 
+      for (register int u = 0; u < width_; ++u, ++k, pt_data += 4) 
       {
         // Check for invalid measurements
         if (depth_md_[k] == 0 || depth_md_[k] == no_sample_value_ || depth_md_[k] == shadow_value_)

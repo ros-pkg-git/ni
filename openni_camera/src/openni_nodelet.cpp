@@ -32,40 +32,35 @@
  *  POSSIBILITY OF SUCH DAMAGE.
  *
  */
+#include <pluginlib/class_list_macros.h>
+#include "openni_camera/openni_nodelets.h"
 
-#ifndef OPENNI_NODELET_OPENNI_H_
-#define OPENNI_NODELET_OPENNI_H_
+typedef openni_camera::OpenNIDriverNodelet OpenNIDriver;
 
-#include <nodelet/nodelet.h>
-#include "openni_camera/openni.h"
-#include <boost/thread.hpp>
+PLUGINLIB_DECLARE_CLASS (openni_camera, OpenNIDriver, OpenNIDriver, nodelet::Nodelet);
 
-namespace openni_camera
+void
+openni_camera::OpenNIDriverNodelet::onInit ()
 {
-  ////////////////////////////////////////////////////////////////////////////////////////////
-  class OpenNIDriverNodelet : public nodelet::Nodelet
-  {
-    public:
-      virtual ~OpenNIDriverNodelet ()
-      {
-        spinthread_->join ();
-        delete spinthread_;
+  /// @todo What exactly goes on with the threading here? -PM
+  ros::NodeHandle comm_nh( getMTNodeHandle().resolveName("camera") ); // for topics, services
+  ros::NodeHandle param_nh = getMTPrivateNodeHandle (); // for parameters
+  driver_ = new OpenNIDriver (comm_nh, param_nh);
 
-        if (driver_)
-          delete driver_;
-      }
-    private:
-      /** \brief Nodelet initialization routine. */
-      virtual void onInit ();
-  
-      /** \brief Spin. */
-      void spin (); 
+  int device_id;
+  param_nh.param ("device_id", device_id, 0);
 
-      /** \brief Object holding a pointer to the driver. */
-      OpenNIDriver* driver_;
-  
-      boost::thread* spinthread_;
-  };
+  if (!driver_->init (device_id))
+    return;
+  if (!driver_->start ())
+    return;
+
+  spinthread_ = new boost::thread (boost::bind (&OpenNIDriverNodelet::spin, this));
 }
 
-#endif  //#ifndef OPENNI_NODELET_OPENNI_H_
+void
+openni_camera::OpenNIDriverNodelet::spin ()
+{
+  driver_->spin ();
+}
+

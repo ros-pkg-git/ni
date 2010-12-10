@@ -24,15 +24,14 @@
   <depend package="nodelet" />
   <depend package="camera_info_manager" />
   <depend package="image_transport" />
-  <depend package="image_geometry" />
   <depend package="sensor_msgs" />
   <depend package="ps_engine" />
   <depend package="openni" />
   <depend package="dynamic_reconfigure" />
-  <depend package="eigen" />
+  <depend package="eigen3" />
 
   <export>
-    <cpp cflags="-I${prefix}/include" lflags="-Wl,-rpath,${prefix}/lib -L${prefix}/lib -lopenni_driver -lopenni_driver_nodelets" />
+    <cpp cflags="-I${prefix}/include" lflags="-Wl,-rpath,${prefix}/lib -L${prefix}/lib -lopenni_driver -lopenni_nodelets" />
     <nodelet plugin="${prefix}/openni_nodelets.xml" />
   </export>
 

@@ -1,0 +1,27 @@
+<package>
+  <description brief="PCL (Point Cloud Library) interface to the OpenNI standard">
+
+    * A specific ROS PCL driver (node + nodelet) for OpenNI compatible cameras, publishing depth data as pcl::PointCloud.
+
+    * PCL example nodelet launch files for filtering, feature estimation, segmentation, etc...
+
+  </description>
+
+  <author>Radu Bogdan Rusu</author>
+  <license>BSD</license>
+  <url>http://ros.org/wiki/openni_pcl</url>
+
+  <review status="experimental" notes="beta"/>
+
+  <depend package="pcl_ros" />
+  <depend package="pcl_visualization" />
+  <depend package="openni_camera" />
+
+  <export>
+    <cpp cflags="-I${prefix}/include" lflags="-Wl,-rpath,${prefix}/lib -L${prefix}/lib -openni_pcl_nodelets" />
+    <nodelet plugin="${prefix}/openni_pcl_nodelets.xml" />
+  </export>
+
+  <platform os="ubuntu" version="10.04"/>
+  <platform os="ubuntu" version="10.10"/>
+</package>

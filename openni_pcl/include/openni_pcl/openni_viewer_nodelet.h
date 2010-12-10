@@ -1,9 +1,7 @@
 /*
  * Software License Agreement (BSD License)
  *
- *  Copyright (c) 2010
- *    Radu Bogdan Rusu <rusu@willowgarage.com>
- *
+ *  Copyright (c) 2010, Willow Garage, Inc.
  *  All rights reserved.
  *
  *  Redistribution and use in source and binary forms, with or without
@@ -34,27 +32,43 @@
  *  POSSIBILITY OF SUCH DAMAGE.
  *
  */
-#include <pluginlib/class_list_macros.h>
-#include "openni_camera/openni_nodelets.h"
 
-typedef openni_camera::OpenNIDriverNodelet OpenNIDriverNodelet;
+#ifndef OPENNI_VIEWER_NODELET_H_
+#define OPENNI_VIEWER_NODELET_H_
 
-PLUGINLIB_DECLARE_CLASS (openni_camera, OpenNIDriverNodelet, OpenNIDriverNodelet, nodelet::Nodelet);
+#include <nodelet/nodelet.h>
+#include <boost/thread.hpp>
+#include <boost/thread/mutex.hpp>
+#include <ros/ros.h>
+#include <pcl_visualization/pcl_visualizer.h>
 
-void
-  openni_camera::OpenNIDriverNodelet::onInit ()
+namespace openni_pcl
 {
-  /// @todo What exactly goes on with the threading here? -PM
-  ros::NodeHandle comm_nh( getMTNodeHandle().resolveName("camera") ); // for topics, services
-  ros::NodeHandle param_nh = getMTPrivateNodeHandle (); // for parameters
-  k = new OpenNIDriver (comm_nh, param_nh);
+  ////////////////////////////////////////////////////////////////////////////////////////////
+  class OpenNIViewerNodelet : public nodelet::Nodelet
+  {
+    private:
+      /** \brief Nodelet initialization routine. */
+      virtual void onInit ();
+  
+      /** \brief Spin. */
+      void spin (); 
 
-  int device_id;
-  param_nh.param ("device_id", device_id, 0);
+      /** \brief PointCloud2 message callback. */
+      void cloud_cb (const sensor_msgs::PointCloud2ConstPtr& cloud);
 
-  if (!k->init (device_id))
-    return;
-  k->start ();
+      /** \brief The ROS NodeHandle used for parameters, publish/subscribe, etc. */
+      boost::shared_ptr<ros::NodeHandle> pnh_;
 
-  k->spin ();
+      /** \brief The input PointCloud2 subscriber. */
+      ros::Subscriber sub_;
+
+      /** \brief The PCLVisualizer object. */
+      boost::shared_ptr<pcl_visualization::PCLVisualizer> viewer_;
+
+      /** \brief Mutex. */
+      boost::mutex mutex_;
+  };
 }
+
+#endif  //#ifndef OPENNI_VIEWER_NODELET_H_

@@ -57,10 +57,7 @@
 #include <dynamic_reconfigure/server.h>
 #include <openni_camera/OpenNIConfig.h>
 
-//@todo: warnings about deprecated header? 
-#include <image_geometry/pinhole_camera_model.h>
-
-#include <Eigen/Core>
+#include <Eigen3/Core>
 
 #include <XnOS.h>
 #include <XnCppWrapper.h>
@@ -126,7 +123,7 @@ namespace openni_camera
 
       /** \brief Camera info manager objects. */
       boost::shared_ptr<CameraInfoManager> rgb_info_manager_, depth_info_manager_;
-      image_geometry::PinholeCameraModel rgb_model_, depth_model_;
+      //image_geometry::PinholeCameraModel rgb_model_, depth_model_;
 
       /** \brief Dynamic reconfigure. */
       typedef openni_camera::OpenNIConfig Config;
@@ -139,8 +136,7 @@ namespace openni_camera
       int height_;
       double shift_offset_;
       //double baseline_; // between IR projector and depth camera
-      Eigen::Matrix<double, 3, 4> depth_to_rgb_;
-      static const double SHIFT_SCALE;
+      Eigen3::Matrix<double, 3, 4> depth_to_rgb_;
       
       /** \brief True if we're acquiring images. */
       bool started_;
@@ -150,7 +146,6 @@ namespace openni_camera
 
       /** \brief Pointer to the RGB buffer data. */
       const XnUInt8 *rgb_buf_;
-      //const XnRGB24Pixel* rgb_buf_;
       /** \brief Pointer to the depth buffer data. */
       const XnDepthPixel* depth_buf_;
 

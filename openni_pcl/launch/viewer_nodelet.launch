@@ -1,0 +1,6 @@
+<launch>
+  <node pkg="nodelet" type="nodelet" name="viewer" args="load openni_pcl/OpenNIViewer openni_manager" output="screen">
+    <remap from="~input" to="/camera/depth/points2_grid" />
+  </node>
+</launch>
+
