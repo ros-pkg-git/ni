@@ -16,6 +16,7 @@
   <depend package="pcl_ros" />
   <depend package="pcl_visualization" />
   <depend package="openni_camera" />
+  <depend package="nodelet" />
 
   <export>
     <cpp cflags="-I${prefix}/include" lflags="-Wl,-rpath,${prefix}/lib -L${prefix}/lib -openni_pcl_nodelets" />
