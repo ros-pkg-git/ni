@@ -94,6 +94,7 @@ OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   // Assemble the point cloud data
   std::string openni_depth_frame;
   param_nh.param ("openni_depth_frame", openni_depth_frame, std::string ("/openni_depth"));
+  // @Radu: is there any point in still publishing sensor_msgs/PointCloud? Don't we want to deprecate this at some point?
   cloud_.header.frame_id = cloud2_.header.frame_id = openni_depth_frame;
   cloud_.channels.resize (1);
   cloud_.channels[0].name = "rgb";
@@ -231,7 +232,7 @@ OpenNIDriver::init (int index)
 #ifndef FROM_XML
   rc_ = depth_.Create (context_);
 #else
-  rc_ = context_.FindExistingNode(XN_NODE_TYPE_DEPTH, depth_);
+  rc_ = context_.FindExistingNode (XN_NODE_TYPE_DEPTH, depth_);
 #endif
   if (rc_ != XN_STATUS_OK)
   {
@@ -241,7 +242,7 @@ OpenNIDriver::init (int index)
 #ifndef FROM_XML
   rc_ = image_.Create (context_);
 #else
-  rc_ = context_.FindExistingNode(XN_NODE_TYPE_IMAGE, image_);
+  rc_ = context_.FindExistingNode (XN_NODE_TYPE_IMAGE, image_);
 #endif
   if (rc_ != XN_STATUS_OK)
   {
@@ -303,14 +304,16 @@ OpenNIDriver::init (int index)
   /// @todo Just have a "kinect_mode" parameter to flip all the switches?
   // RegistrationType should be 2 (software) for Kinect, 1 (hardware) for PS
   int registration_type = 0;
-  if (param_nh_.getParam("registration_type", registration_type)) {
+  if (param_nh_.getParam ("registration_type", registration_type)) 
+  {
     if (depth_.SetIntProperty ("RegistrationType", registration_type) != XN_STATUS_OK)
       ROS_WARN ("[OpenNIDriver] Error enabling registration!");
   }
 
   // InputFormat should be 6 for Kinect, 5 for PS
-  int image_input_format = 0;
-  if (param_nh_.getParam("image_input_format", image_input_format)) {
+  int image_input_format = 6;
+  if (param_nh_.getParam ("image_input_format", image_input_format)) 
+  {
     if (image_.SetIntProperty ("InputFormat", image_input_format) != XN_STATUS_OK)
       ROS_ERROR ("[OpenNIDriver] Error setting the RGB output format to Uncompressed 8-bit BAYER!");
   }
@@ -319,7 +322,7 @@ OpenNIDriver::init (int index)
   depth_.GetIntProperty ("FPS", fps);
   ROS_INFO_STREAM ("[OpenNIDriver] FPS: " << fps);
 
-  depth_.GetAlternativeViewPointCap().SetViewPoint( image_ );
+  depth_.GetAlternativeViewPointCap ().SetViewPoint (image_);
   return (true);
 }
 
@@ -390,22 +393,21 @@ OpenNIDriver::stop ()
 void 
 OpenNIDriver::publish ()
 {
+  boost::mutex::scoped_lock lock (buffer_mutex_);
   ros::Time time = ros::Time::now ();
-  cloud_.header.stamp = cloud2_.header.stamp = time;
-  rgb_image_.header.stamp   = rgb_info_.header.stamp   = time;
-  depth_image_.header.stamp = depth_info_.header.stamp = time;
 
   // Fill raw RGB image message
   if (pub_rgb_.getNumSubscribers () > 0)
   {
-    // Copy the image data
-    memcpy (&rgb_image_.data[0], &rgb_buf_[0], rgb_image_.data.size());
+    rgb_image_.header.stamp = rgb_info_.header.stamp = time;
+    rgb_image_.data.insert (rgb_image_.data.end (), &rgb_buf_[0], rgb_buf_ + rgb_image_.data.size ());
     pub_rgb_.publish (boost::make_shared<const sensor_msgs::Image> (rgb_image_), 
                       boost::make_shared<const sensor_msgs::CameraInfo> (rgb_info_)); 
   }
   // Fill in the PointCloud2 structure
   if (pub_depth_points2_.getNumSubscribers () > 0)
   {
+    cloud2_.header.stamp = time;
     // Assemble an awesome sensor_msgs/PointCloud2 message
     float bad_point = std::numeric_limits<float>::quiet_NaN ();
     int k = 0;
@@ -448,6 +450,7 @@ OpenNIDriver::publish ()
  
   if (pub_depth_.getNumSubscribers () > 0)
   { 
+    depth_image_.header.stamp = depth_info_.header.stamp = time;
     // Fill in the depth image data
     // iterate over all elements and fill disparity matrix: disp[x,y] = f * b / z_distance[x,y];
     float constant = focal_length_ * baseline_ * 1000.0;
@@ -491,7 +494,6 @@ void OpenNIDriver::publishImu()
 void OpenNIDriver::configCb (Config &config, uint32_t level)
 {
     rgb_image_.encoding = sensor_msgs::image_encodings::RGB8;
-    rgb_image_.data.resize (width_ * height_ * 3);
     rgb_image_.step = width_ * 3;
   /// @todo Integrate init() in here, so can change device and not worry about first config call
   
