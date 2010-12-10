@@ -1,8 +1,8 @@
 <launch>
   <!-- Run a VoxelGrid filter to clean NaNs and downsample the data -->
   <node pkg="nodelet" type="nodelet" name="voxel_grid" args="load pcl/VoxelGrid openni_manager" output="screen">
-    <remap from="~input" to="/openni/depth/points2" />
-    <remap from="~output" to="/openni/depth/points2_grid" />
+    <remap from="~input" to="/camera/depth/points2" />
+    <remap from="~output" to="/camera/depth/points2_grid" />
     <rosparam>
       filter_field_name: z
       filter_limit_min: 0.01
