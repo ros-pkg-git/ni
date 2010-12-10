@@ -35,9 +35,9 @@
 #include <pluginlib/class_list_macros.h>
 #include "openni_camera/openni_nodelets.h"
 
-typedef openni_camera::OpenNIDriverNodelet OpenNIDriverNodelet;
+typedef openni_camera::OpenNIDriverNodelet OpenNIDriver;
 
-PLUGINLIB_DECLARE_CLASS (openni_camera, OpenNIDriverNodelet, OpenNIDriverNodelet, nodelet::Nodelet);
+PLUGINLIB_DECLARE_CLASS (openni_camera, OpenNIDriver, OpenNIDriver, nodelet::Nodelet);
 
 void
 openni_camera::OpenNIDriverNodelet::onInit ()
