@@ -275,9 +275,6 @@ OpenNIDriver::init (int index)
   }
 #endif
 
-  depth_.GetMetaData (depth_md_);
-  image_.GetMetaData (image_md_);
-
   // Read parameters from the camera
   if (depth_.GetRealProperty ("ZPPS", pixel_size_) != XN_STATUS_OK)
     ROS_ERROR ("[OpenNIDriver] Could not read pixel size!");
@@ -368,10 +365,11 @@ OpenNIDriver::spin ()
   if (!started_)
     return (false);
 
+	//ROS_INFO("start time : %n", image_.GetTimestamp() );
   while (comm_nh_.ok ())
   {
     // Wait for new data to be available
-    rc_ = context_.WaitOneUpdateAll (depth_);
+    rc_ = context_.WaitAndUpdateAll ( );
     //rc_ = context_.WaitAnyUpdateAll ();
     if (rc_ != XN_STATUS_OK)
     {
@@ -395,12 +393,32 @@ OpenNIDriver::spin ()
 void 
 OpenNIDriver::publish ()
 {
-  ros::Time time = ros::Time::now ();
+  static bool first_publish = true;
+  static ros::Duration time_offset;
+  if( first_publish )
+  {
+    ros::Time ros_time = ros::Time::now ();
+    XnUInt64 latest_time = std::max( depth_.GetTimestamp(), image_.GetTimestamp() );
+
+    ros::Time latest( latest_time / 1000000, (latest_time % 1000000) * 1000 );
+
+    time_offset = ros_time - latest;
+
+    first_publish = false;
+    //ROS_INFO ( "ros time: %f, latest time: %f, time diff %f", ros_time.toSec(), latest.toSec(), time_offset.toSec() );
+  }
+
+	depth_.GetMetaData (depth_md_);
+  image_.GetMetaData (image_md_);
 
   // Fill raw RGB image message
   if (pub_rgb_.getNumSubscribers () > 0)
   {
+    ros::Time time( image_.GetTimestamp() / 1000000, (image_.GetTimestamp() % 1000000) * 1000 );
+    time += time_offset;
+    //ROS_INFO ( "color image %i (%i) -> %f", image_.GetFrameID(), image_.GetTimestamp(), time.toSec() );
     rgb_image_.header.stamp = rgb_info_.header.stamp = time;
+    rgb_image_.header.seq = image_.GetFrameID();
     memcpy (&rgb_image_.data[0], &rgb_buf_[0], rgb_image_.data.size ());
     pub_rgb_.publish (boost::make_shared<const sensor_msgs::Image> (rgb_image_), 
                       boost::make_shared<const sensor_msgs::CameraInfo> (rgb_info_)); 
@@ -408,7 +426,13 @@ OpenNIDriver::publish ()
   // Fill in the PointCloud2 structure
   if (pub_depth_points2_.getNumSubscribers () > 0)
   {
+    XnUInt64 latest_time = std::max( depth_.GetTimestamp(), image_.GetTimestamp() );
+    ros::Time time( latest_time / 1000000, (latest_time % 1000000) * 1000 );
+    time += time_offset;
+    
     cloud2_.header.stamp = time;
+    cloud2_.header.seq = std::max( image_.GetFrameID(), depth_.GetFrameID() );
+
     // Assemble an awesome sensor_msgs/PointCloud2 message
     float bad_point = std::numeric_limits<float>::quiet_NaN ();
     int k = 0;
@@ -459,12 +483,19 @@ OpenNIDriver::publish ()
         pt_data[3] = color.float_value;
       }
     }
+    
+    
     pub_depth_points2_.publish (boost::make_shared<const sensor_msgs::PointCloud2> (cloud2_));
   }
  
   if (pub_depth_.getNumSubscribers () > 0)
-  { 
+  {
+    ros::Time time( image_.GetTimestamp() / 1000000, (image_.GetTimestamp() % 1000000) * 1000 );
+    time += time_offset;
+    //ROS_INFO ( "depth image %i (%i) -> %f", depth_.GetFrameID(), depth_.GetTimestamp(), time.toSec() );
+
     depth_image_.header.stamp = depth_info_.header.stamp = time;
+    depth_image_.header.seq = depth_.GetFrameID();
     // Fill in the depth image data
     // iterate over all elements and fill disparity matrix: disp[x,y] = f * b / z_distance[x,y];
     float constant = focal_length_ * baseline_ * 1000.0;
@@ -476,7 +507,13 @@ OpenNIDriver::publish ()
       else
         *pixel = constant / (double)depth_md_[i];
     }
-
+    
+    float sum_depth = 0;
+		for (register int i = 0; i < width_; ++i, ++pixel)
+    {
+      sum_depth += depth_md_[ i ];
+    }
+		
     // Publish depth Image
     pub_depth_.publish (boost::make_shared<const sensor_msgs::Image> (depth_image_), 
                         boost::make_shared<const sensor_msgs::CameraInfo> (depth_info_));
