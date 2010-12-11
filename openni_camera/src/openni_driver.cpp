@@ -312,8 +312,6 @@ OpenNIDriver::init (int index)
   {
     if (depth_.SetIntProperty ("RegistrationType", registration_type) != XN_STATUS_OK)
       ROS_WARN ("[OpenNIDriver] Error enabling registration!");
-    if (depth_.SetIntProperty ("Registration", 0) != XN_STATUS_OK)
-      ROS_WARN ("[OpenNIDriver] Error enabling registration!");
   }
 
   // InputFormat should be 6 for Kinect, 5 for PS
@@ -328,7 +326,6 @@ OpenNIDriver::init (int index)
   depth_.GetIntProperty ("FPS", fps);
   ROS_INFO_STREAM ("[OpenNIDriver] FPS: " << fps);
 
-  depth_.GetAlternativeViewPointCap ().SetViewPoint (image_);
   return (true);
 }
 
@@ -346,6 +343,10 @@ OpenNIDriver::start ()
     return (false);
   }
 
+  // Note: For the PSDK5 device, the alternative viewpoint needs to be set after starting
+  // data generation, or the depth generation hangs.
+  depth_.GetAlternativeViewPointCap().SetViewPoint( image_ );
+
   started_ = true;
   return (true);
 }
@@ -362,12 +363,27 @@ OpenNIDriver::stop ()
 bool 
 OpenNIDriver::spin ()
 {
-  if (!started_)
-    return (false);
-
-	//ROS_INFO("start time : %n", image_.GetTimestamp() );
+  ros::Duration r (0.01);
   while (comm_nh_.ok ())
   {
+    // Don't do anything but sleep if we have no subscribers
+    if (pub_rgb_.getNumSubscribers () == 0 && pub_depth_.getNumSubscribers () == 0 && pub_depth_points2_.getNumSubscribers () == 0)
+    {
+      if (started_)
+      {
+        context_.StopGeneratingAll ();
+        started_ = false;
+      }
+      r.sleep ();
+      continue;
+    }
+
+    if (!started_)
+    {
+      context_.StartGeneratingAll ();
+      started_ = true;
+    }
+
     // Wait for new data to be available
     rc_ = context_.WaitAndUpdateAll ( );
     //rc_ = context_.WaitAnyUpdateAll ();

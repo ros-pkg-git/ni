@@ -49,7 +49,8 @@ installed: $(GIT_DIR)
 clean:
 	-cd $(GIT_DIR)/Platform/$(PLATFORM)/Build && make clean && cd -
 	rm -rf $(GIT_DIR)/Platform/$(PLATFORM)/CreateRedist/Final/*
-	rm -rf bin lib config installed
+	rm -f lib/*.so
+	rm -rf bin config installed
 
 wipe:
 	rm -rf bin lib config installed
