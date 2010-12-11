@@ -43,11 +43,10 @@ PLUGINLIB_DECLARE_CLASS (openni_pcl, OpenNIViewer, OpenNIViewer, nodelet::Nodele
 void
 openni_pcl::OpenNIViewerNodelet::onInit ()
 {
-  pnh_.reset (new ros::NodeHandle (getMTNodeHandle ().resolveName("camera")));
-
-  sub_ = pnh_->subscribe ("input", 15, &OpenNIViewerNodelet::cloud_cb, this);
-
+  pnh_.reset (new ros::NodeHandle (getMTPrivateNodeHandle ()));
+  sub_.subscribe (*pnh_, "input", 1, bind (&OpenNIViewerNodelet::cloud_cb, this, _1));
   viewer_.reset (new pcl_visualization::PCLVisualizer ("OpenNI Kinect Viewer"));
+  ROS_INFO ("[OpenNIViewer] Nodelet initialized.");
 }
 
 void
@@ -55,12 +54,9 @@ openni_pcl::OpenNIViewerNodelet::cloud_cb (const sensor_msgs::PointCloud2ConstPt
 {
   boost::mutex::scoped_lock lock (mutex_);
 
-  // Spin
-  viewer_->spinOnce (10);
-
   // Save the last point size used
   double psize;
-  viewer_->getPointCloudRenderingProperties (pcl_visualization::PCL_VISUALIZER_POINT_SIZE, psize, "cloud");
+  //viewer_->getPointCloudRenderingProperties (pcl_visualization::PCL_VISUALIZER_POINT_SIZE, psize, "cloud");
 
   viewer_->removePointCloud ("cloud");
   
@@ -75,6 +71,9 @@ openni_pcl::OpenNIViewerNodelet::cloud_cb (const sensor_msgs::PointCloud2ConstPt
       "cloud");
 
   // Set the point size
-  viewer_->setPointCloudRenderingProperties (pcl_visualization::PCL_VISUALIZER_POINT_SIZE, psize, "cloud");
+  //viewer_->setPointCloudRenderingProperties (pcl_visualization::PCL_VISUALIZER_POINT_SIZE, psize, "cloud");
+
+  // Spin
+  viewer_->spinOnce (10);
 }
 

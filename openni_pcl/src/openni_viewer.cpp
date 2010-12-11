@@ -85,7 +85,7 @@ main (int argc, char** argv)
       continue;
 
     // Save the last point size used
-    p.getPointCloudRenderingProperties (pcl_visualization::PCL_VISUALIZER_POINT_SIZE, psize, "cloud");
+    //p.getPointCloudRenderingProperties (pcl_visualization::PCL_VISUALIZER_POINT_SIZE, psize, "cloud");
 
     p.removePointCloud ("cloud");
     // Convert to PointCloud<T>
@@ -96,7 +96,7 @@ main (int argc, char** argv)
     p.addPointCloud (cloud_xyz, color_handler, "cloud");
 
     // Set the point size
-    p.setPointCloudRenderingProperties (pcl_visualization::PCL_VISUALIZER_POINT_SIZE, psize, "cloud");
+    //p.setPointCloudRenderingProperties (pcl_visualization::PCL_VISUALIZER_POINT_SIZE, psize, "cloud");
 
     cloud_old_ = cloud_;
     m.unlock ();

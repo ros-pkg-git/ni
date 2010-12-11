@@ -94,6 +94,7 @@ OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   // Assemble the point cloud data
   std::string openni_depth_frame;
   param_nh.param ("openni_depth_frame", openni_depth_frame, std::string ("/openni_depth"));
+  // @Radu: is there any point in still publishing sensor_msgs/PointCloud? Don't we want to deprecate this at some point?
   cloud_.header.frame_id = cloud2_.header.frame_id = openni_depth_frame;
   cloud_.channels.resize (1);
   cloud_.channels[0].name = "rgb";
@@ -218,6 +219,13 @@ OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   pub_imu_ = comm_nh.advertise<sensor_msgs::Imu>("imu", 15);
 }
 
+/** \brief Destructor */
+OpenNIDriver::~OpenNIDriver ()
+{
+  stop ();
+  context_.Shutdown ();
+}
+
 /** \brief Initialize an OpenNI device, given an index.
   * \param index the index of the device to initialize
   */
@@ -231,7 +239,7 @@ OpenNIDriver::init (int index)
 #ifndef FROM_XML
   rc_ = depth_.Create (context_);
 #else
-  rc_ = context_.FindExistingNode(XN_NODE_TYPE_DEPTH, depth_);
+  rc_ = context_.FindExistingNode (XN_NODE_TYPE_DEPTH, depth_);
 #endif
   if (rc_ != XN_STATUS_OK)
   {
@@ -241,7 +249,7 @@ OpenNIDriver::init (int index)
 #ifndef FROM_XML
   rc_ = image_.Create (context_);
 #else
-  rc_ = context_.FindExistingNode(XN_NODE_TYPE_IMAGE, image_);
+  rc_ = context_.FindExistingNode (XN_NODE_TYPE_IMAGE, image_);
 #endif
   if (rc_ != XN_STATUS_OK)
   {
@@ -303,14 +311,16 @@ OpenNIDriver::init (int index)
   /// @todo Just have a "kinect_mode" parameter to flip all the switches?
   // RegistrationType should be 2 (software) for Kinect, 1 (hardware) for PS
   int registration_type = 0;
-  if (param_nh_.getParam("registration_type", registration_type)) {
+  if (param_nh_.getParam ("registration_type", registration_type)) 
+  {
     if (depth_.SetIntProperty ("RegistrationType", registration_type) != XN_STATUS_OK)
       ROS_WARN ("[OpenNIDriver] Error enabling registration!");
   }
 
   // InputFormat should be 6 for Kinect, 5 for PS
-  int image_input_format = 0;
-  if (param_nh_.getParam("image_input_format", image_input_format)) {
+  int image_input_format = 6;
+  if (param_nh_.getParam ("image_input_format", image_input_format)) 
+  {
     if (image_.SetIntProperty ("InputFormat", image_input_format) != XN_STATUS_OK)
       ROS_ERROR ("[OpenNIDriver] Error setting the RGB output format to Uncompressed 8-bit BAYER!");
   }
@@ -320,43 +330,6 @@ OpenNIDriver::init (int index)
   ROS_INFO_STREAM ("[OpenNIDriver] FPS: " << fps);
 
   return (true);
-}
-
-/** \brief Spin loop. */
-bool 
-OpenNIDriver::spin ()
-{
-  if (!started_)
-    return (false);
-
-  while (comm_nh_.ok ())
-  {
-    // Wait for new data to be available
-    rc_ = context_.WaitOneUpdateAll (depth_);
-    //rc_ = context_.WaitAnyUpdateAll ();
-    if (rc_ != XN_STATUS_OK)
-    {
-      ROS_ERROR ("[OpenNIDriver::spin] Error receiving data: %s", xnGetStatusString (rc_));
-      continue;
-    }
-
-    // Take current RGB and depth map
-    depth_buf_ = depth_.GetDepthMap ();
-    rgb_buf_   = image_.GetImageMap ();
-    // And publish them
-    publish ();
-
-    // Spin for ROS message processing
-    ros::spinOnce ();
-  }
-  return (true);
-}
-
-/** \brief Destructor */
-OpenNIDriver::~OpenNIDriver ()
-{
-  stop ();
-  context_.Shutdown ();
 }
 
 /** \brief Start (resume) the data acquisition process. */
@@ -389,26 +362,70 @@ OpenNIDriver::stop ()
   started_ = false;
 }
 
+/** \brief Spin loop. */
+bool 
+OpenNIDriver::spin ()
+{
+  ros::Duration r (0.01);
+  while (comm_nh_.ok ())
+  {
+    // Don't do anything but sleep if we have no subscribers
+    if (pub_rgb_.getNumSubscribers () == 0 && pub_depth_.getNumSubscribers () == 0 && pub_depth_points2_.getNumSubscribers () == 0)
+    {
+      if (started_)
+      {
+        context_.StopGeneratingAll ();
+        started_ = false;
+      }
+      r.sleep ();
+      continue;
+    }
+
+    if (!started_)
+    {
+      context_.StartGeneratingAll ();
+      started_ = true;
+    }
+
+    // Wait for new data to be available
+    rc_ = context_.WaitOneUpdateAll (depth_);
+    //rc_ = context_.WaitAnyUpdateAll ();
+    if (rc_ != XN_STATUS_OK)
+    {
+      ROS_ERROR ("[OpenNIDriver::spin] Error receiving data: %s", xnGetStatusString (rc_));
+      continue;
+    }
+
+    // Take current RGB and depth map
+    depth_buf_ = depth_.GetDepthMap ();
+    rgb_buf_   = image_.GetImageMap ();
+    // And publish them
+    publish ();
+
+    // Spin for ROS message processing
+    ros::spinOnce ();
+  }
+  return (true);
+}
+
 /** \brief Take care of putting data in the correct ROS message formats. */
 void 
 OpenNIDriver::publish ()
 {
   ros::Time time = ros::Time::now ();
-  cloud_.header.stamp = cloud2_.header.stamp = time;
-  rgb_image_.header.stamp   = rgb_info_.header.stamp   = time;
-  depth_image_.header.stamp = depth_info_.header.stamp = time;
 
   // Fill raw RGB image message
   if (pub_rgb_.getNumSubscribers () > 0)
   {
-    // Copy the image data
-    memcpy (&rgb_image_.data[0], &rgb_buf_[0], rgb_image_.data.size());
+    rgb_image_.header.stamp = rgb_info_.header.stamp = time;
+    memcpy (&rgb_image_.data[0], &rgb_buf_[0], rgb_image_.data.size ());
     pub_rgb_.publish (boost::make_shared<const sensor_msgs::Image> (rgb_image_), 
                       boost::make_shared<const sensor_msgs::CameraInfo> (rgb_info_)); 
   }
   // Fill in the PointCloud2 structure
   if (pub_depth_points2_.getNumSubscribers () > 0)
   {
+    cloud2_.header.stamp = time;
     // Assemble an awesome sensor_msgs/PointCloud2 message
     float bad_point = std::numeric_limits<float>::quiet_NaN ();
     int k = 0;
@@ -418,9 +435,22 @@ OpenNIDriver::publish ()
     RGBValue color;
     color.Alpha = 0;
 
-    for (register int v = 0; v < height_; ++v)
+    // Re-adjust the PointCloud2 output if the size changed
+    if (depth_md_.XRes () != cloud2_.width)
     {
-      for (register int u = 0; u < width_; ++u, ++k, pt_data += 4) 
+      cloud2_.width = depth_md_.XRes ();
+      cloud2_.row_step   = cloud2_.point_step * cloud2_.width;
+      cloud2_.data.resize (cloud2_.row_step   * cloud2_.height);
+    }
+    if (depth_md_.YRes () != cloud2_.height)
+    {
+      cloud2_.height = depth_md_.YRes ();
+      cloud2_.data.resize (cloud2_.row_step   * cloud2_.height);
+    }
+
+    for (register int v = 0; v < cloud2_.height; ++v)
+    {
+      for (register int u = 0; u < cloud2_.width; ++u, ++k, pt_data += 4) 
       {
         // Check for invalid measurements
         if (depth_md_[k] == 0 || depth_md_[k] == no_sample_value_ || depth_md_[k] == shadow_value_)
@@ -451,6 +481,7 @@ OpenNIDriver::publish ()
  
   if (pub_depth_.getNumSubscribers () > 0)
   { 
+    depth_image_.header.stamp = depth_info_.header.stamp = time;
     // Fill in the depth image data
     // iterate over all elements and fill disparity matrix: disp[x,y] = f * b / z_distance[x,y];
     float constant = focal_length_ * baseline_ * 1000.0;
@@ -502,12 +533,12 @@ void OpenNIDriver::configCb (Config &config, uint32_t level)
   /// @todo Mucking with image_ here might not be thread-safe
 /*  if (config.color_format == FORMAT_RGB) {
     rgb_image_.encoding = sensor_msgs::image_encodings::RGB8;
-    rgb_image_.data.resize (width_ * height_ * 4);
+    rgb_image_.data.resize (width_ * height_ * 3);
     rgb_image_.step = width_ * 3;
   }
   else if (config.color_format == FORMAT_IR) {
     rgb_image_.encoding = sensor_msgs::image_encodings::MONO8;
-    rgb_image_.data.resize (width_ * height_ * 4);
+    rgb_image_.data.resize (width_ * height_ * 3);
     rgb_image_.step = width_ * 3;
   }
   else {
