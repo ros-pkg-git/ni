@@ -61,7 +61,7 @@ main (int argc, char** argv)
   ros::NodeHandle nh ("~");
 
   // Create a ROS subscriber
-  ros::Subscriber sub = nh.subscribe ("input", 15, cloud_cb);
+  ros::Subscriber sub = nh.subscribe ("input", 30, cloud_cb);
 
   ROS_INFO ("Subscribing to %s for PointCloud2 messages...", nh.resolveName ("input").c_str ());
 
@@ -75,7 +75,7 @@ main (int argc, char** argv)
     // Spin
     ros::spinOnce ();
     ros::Duration (0.0001).sleep ();
-    p.spinOnce (10);
+    p.spinOnce (1);
 
     // If no cloud received yet, continue
     if (!cloud_)
