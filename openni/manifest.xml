@@ -9,7 +9,7 @@
   <url>http://www.openni.org/</url>
 
   <export>
-    <cpp cflags="-I${prefix}/include/ni" lflags="-Wl,-rpath,${prefix}/lib -L${prefix}/lib -lOpenNI -lnimCodecs -lnimMockNodes -lnimRecorder" />
+    <cpp cflags="-I${prefix}/include/ni" lflags="-Wl,-rpath,${prefix}/lib -L${prefix}/lib -lOpenNI" />
   </export>
 
   <platform os="ubuntu" version="10.04"/>
