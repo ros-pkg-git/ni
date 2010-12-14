@@ -1,11 +1,24 @@
 all: nite
 
-TARBALL     = build/NITE-Bin-Ubuntu-x64-1.3.0.17.tar.bz2
-TARBALL_URL = http://downloads.primesense.com/NITE-Bin-Ubuntu-x64-1.3.0.17.tar.bz2
+ARCH = $(shell uname -m)
+ifeq ($(ARCH), i686)
+ARCH_DIR = x86
+else ifeq ($(ARCH), i486)
+ARCH_DIR = x86
+else ifeq ($(ARCH), i386)
+ARCH_DIR = x86
+else ifeq ($(ARCH), x86_64)
+ARCH_DIR = x64
+endif
+BIN_DIR = $(SOURCE_DIR)/bin-pc/$(ARCH_DIR)
+
+
+TARBALL     = build/NITE-Bin-Ubuntu-$(ARCH_DIR)-1.3.0.17.tar.bz2
+TARBALL_URL = http://downloads.primesense.com/NITE-Bin-Ubuntu-$(ARCH_DIR)-1.3.0.17.tar.bz2
 UNPACK_CMD  = tar xfj
 SOURCE_DIR  = build/Nite-1.3.0.17
 TARBALL_PATCH = 
-MD5SUM_FILE = NITE-Bin-Ubuntu-x64-1.3.0.17.tar.bz2.md5sum
+MD5SUM_FILE = NITE-Bin-Ubuntu-$(ARCH_DIR)-1.3.0.17.tar.bz2.md5sum
 
 include $(shell rospack find mk)/download_unpack_build.mk
 

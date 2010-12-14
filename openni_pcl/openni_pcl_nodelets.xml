@@ -1,0 +1,8 @@
+<!-- OpenNI driver nodelet publisher -->
+<library path="lib/libopenni_pcl_nodelets">
+  <class name="openni_pcl/OpenNIViewer" type="OpenNIViewer" base_class_type="nodelet::Nodelet">
+    <description>
+      OpenNI viewer nodelet consumer.
+    </description>
+  </class>
+</library>

@@ -1,9 +1,7 @@
 /*
  * Software License Agreement (BSD License)
  *
- *  Copyright (c) 2010
- *    Radu Bogdan Rusu <rusu@willowgarage.com>
- *
+ *  Copyright (c) 2010, Willow Garage, Inc.
  *  All rights reserved.
  *
  *  Redistribution and use in source and binary forms, with or without
@@ -37,24 +35,32 @@
 #include <pluginlib/class_list_macros.h>
 #include "openni_camera/openni_nodelets.h"
 
-typedef openni_camera::OpenNIDriverNodelet OpenNIDriverNodelet;
+typedef openni_camera::OpenNIDriverNodelet OpenNIDriver;
 
-PLUGINLIB_DECLARE_CLASS (openni_camera, OpenNIDriverNodelet, OpenNIDriverNodelet, nodelet::Nodelet);
+PLUGINLIB_DECLARE_CLASS (openni_camera, OpenNIDriver, OpenNIDriver, nodelet::Nodelet);
 
 void
-  openni_camera::OpenNIDriverNodelet::onInit ()
+openni_camera::OpenNIDriverNodelet::onInit ()
 {
   /// @todo What exactly goes on with the threading here? -PM
   ros::NodeHandle comm_nh( getMTNodeHandle().resolveName("camera") ); // for topics, services
   ros::NodeHandle param_nh = getMTPrivateNodeHandle (); // for parameters
-  k = new OpenNIDriver (comm_nh, param_nh);
+  driver_ = new OpenNIDriver (comm_nh, param_nh);
 
   int device_id;
   param_nh.param ("device_id", device_id, 0);
 
-  if (!k->init (device_id))
+  if (!driver_->init (device_id))
     return;
-  k->start ();
+  if (!driver_->start ())
+    return;
 
-  k->spin ();
+  spinthread_ = new boost::thread (boost::bind (&OpenNIDriverNodelet::spin, this));
 }
+
+void
+openni_camera::OpenNIDriverNodelet::spin ()
+{
+  driver_->spin ();
+}
+

@@ -33,39 +33,43 @@
  *
  */
 
-#ifndef OPENNI_NODELET_OPENNI_H_
-#define OPENNI_NODELET_OPENNI_H_
+#ifndef OPENNI_VIEWER_NODELET_H_
+#define OPENNI_VIEWER_NODELET_H_
 
 #include <nodelet/nodelet.h>
-#include "openni_camera/openni.h"
 #include <boost/thread.hpp>
+#include <boost/thread/mutex.hpp>
+#include <ros/ros.h>
+#include <pcl_ros/subscriber.h>
+#include <pcl_visualization/pcl_visualizer.h>
 
-namespace openni_camera
+namespace openni_pcl
 {
   ////////////////////////////////////////////////////////////////////////////////////////////
-  class OpenNIDriverNodelet : public nodelet::Nodelet
+  class OpenNIViewerNodelet : public nodelet::Nodelet
   {
-    public:
-      virtual ~OpenNIDriverNodelet ()
-      {
-        spinthread_->join ();
-        delete spinthread_;
-
-        if (driver_)
-          delete driver_;
-      }
-    private:
+    protected:
       /** \brief Nodelet initialization routine. */
       virtual void onInit ();
   
       /** \brief Spin. */
       void spin (); 
 
-      /** \brief Object holding a pointer to the driver. */
-      OpenNIDriver* driver_;
-  
-      boost::thread* spinthread_;
+      /** \brief PointCloud2 message callback. */
+      void cloud_cb (const sensor_msgs::PointCloud2ConstPtr& cloud);
+
+      /** \brief The ROS NodeHandle used for parameters, publish/subscribe, etc. */
+      boost::shared_ptr<ros::NodeHandle> pnh_;
+
+      /** \brief The input PointCloud2 subscriber. */
+      pcl_ros::Subscriber<sensor_msgs::PointCloud2> sub_;
+
+      /** \brief The PCLVisualizer object. */
+      boost::shared_ptr<pcl_visualization::PCLVisualizer> viewer_;
+
+      /** \brief Mutex. */
+      boost::mutex mutex_;
   };
 }
 
-#endif  //#ifndef OPENNI_NODELET_OPENNI_H_
+#endif  //#ifndef OPENNI_VIEWER_NODELET_H_

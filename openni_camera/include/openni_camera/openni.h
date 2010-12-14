@@ -57,10 +57,7 @@
 #include <dynamic_reconfigure/server.h>
 #include <openni_camera/OpenNIConfig.h>
 
-//@todo: warnings about deprecated header? 
-#include <image_geometry/pinhole_camera_model.h>
-
-#include <Eigen/Core>
+#include <Eigen3/Core>
 
 #include <XnOS.h>
 #include <XnCppWrapper.h>
@@ -82,7 +79,7 @@ namespace openni_camera
       /** \brief Initialize a OpenNI device, given an index.
         * \param index the index of the device to initialize
         */
-      bool init (int index);
+      bool init (int index=-1);
 
       /** \brief Spin (!)
         */
@@ -92,40 +89,29 @@ namespace openni_camera
       /** \brief Send the data over the network. */
       void publish ();
 
-      void publishImu();
+      void onSubscribeDepth( const ros::SingleSubscriberPublisher& subscriber );
+      void onUnsubscribeDepth( const ros::SingleSubscriberPublisher& subscriber );
+      void onSubscribeImage( const image_transport::SingleSubscriberPublisher& subscriber );
+      void onUnsubscribeImage( const image_transport::SingleSubscriberPublisher& subscriber );
 
       /** \brief An OpenNI context object. */
       xn::Context context_;
-
-      /** \brief Return code for any OpenNI call. */
-      XnStatus rc_;
-
       /** \brief Depth generator object. */
-      xn::DepthGenerator depth_;
+      xn::DepthGenerator depth_generator_;
       /** \brief Image generator object. */
-      xn::ImageGenerator image_;
-      /** \brief Depth meta data. */
-      xn::DepthMetaData depth_md_;
-      /** \brief Image meta data. */
-      xn::ImageMetaData image_md_;
+      xn::ImageGenerator image_generator_;
+      /** \brief IR generator object. */
+      xn::IRGenerator ir_generator_;
 
+      typedef enum{ RGB888, IR } ImageType;
    private:
       /** \brief A copy of the communication NodeHandle. */
       ros::NodeHandle comm_nh_;
-
-      /** \brief Internal mutex. */
-      boost::mutex buffer_mutex_;
+      ros::NodeHandle param_nh_;
 
       /** \brief ROS publishers. */
       image_transport::CameraPublisher pub_rgb_, pub_depth_, pub_ir_;
-      image_transport::Publisher pub_rgb_rect_;
-      ros::Publisher pub_depth_points_, pub_depth_points2_;
-      ros::Publisher pub_rgb_points2_;
-      ros::Publisher pub_imu_;
-
-      /** \brief Camera info manager objects. */
-      boost::shared_ptr<CameraInfoManager> rgb_info_manager_, depth_info_manager_;
-      image_geometry::PinholeCameraModel rgb_model_, depth_model_;
+      ros::Publisher pub_depth_points2_;
 
       /** \brief Dynamic reconfigure. */
       typedef openni_camera::OpenNIConfig Config;
@@ -133,48 +119,26 @@ namespace openni_camera
       ReconfigureServer reconfigure_server_;
       Config config_;
 
-      /** \brief Camera parameters. */
-      int width_;
-      int height_;
-      double shift_offset_;
-      //double baseline_; // between IR projector and depth camera
-      Eigen::Matrix<double, 3, 4> depth_to_rgb_;
-      static const double SHIFT_SCALE;
-      
+      unsigned width_;
+      unsigned height_;
       /** \brief True if we're acquiring images. */
       bool started_;
 
       XnDouble pixel_size_, baseline_;
       XnUInt64 focal_length_, shadow_value_, no_sample_value_, F_;
 
-      /** \brief Pointer to the RGB buffer data. */
-      const XnUInt8 *rgb_buf_;
-      //const XnRGB24Pixel* rgb_buf_;
-      /** \brief Pointer to the depth buffer data. */
-      const XnDepthPixel* depth_buf_;
-
       /// @todo May actually want to allocate each time when using nodelets
       /** \brief Image data. */
-      sensor_msgs::Image rgb_image_, depth_image_;
-      /** \brief PointCloud data. */
-      sensor_msgs::PointCloud cloud_;
+      sensor_msgs::Image rgb_image_, depth_image_, ir_image_;
       /** \brief PointCloud2 data. */
       sensor_msgs::PointCloud2 cloud2_;
       /** \brief Camera info data. */
-      sensor_msgs::CameraInfo rgb_info_, depth_info_;
-      /** \brief Accelerometer data. */
-      sensor_msgs::Imu imu_msg_;
-
-      /** \brief Accelerometer data */
-      double accel_x_, accel_y_, accel_z_;
-
-      /** \brief Tilt sensor */
-      double tilt_angle_; // [deg]
+      sensor_msgs::CameraInfo rgb_info_, depth_info_, ir_info_;
 
       /** \brief Callback for dynamic_reconfigure */
       void configCb (Config &config, uint32_t level);
 
-      void updateDeviceSettings();
+      bool updateDeviceSettings();
     
     public:
       EIGEN_MAKE_ALIGNED_OPERATOR_NEW;

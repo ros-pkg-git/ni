@@ -16,24 +16,24 @@ include $(shell rospack find mk)/git_checkout.mk
 
 installed: $(GIT_DIR)
 	@-mkdir -p bin lib config 
-	@echo "### Patching the main Makefile for OpenNI..."
+	@echo "### Patching the main Makefile for PS Engine..."
 	@cd $(GIT_DIR)/Platform/$(PLATFORM)/Build && \
 		sed -i -e 's/CFG=$$(CFG)//g' Makefile && \
 		cd -
 	@echo "### Patching the output library for the core libraries..."
 	@cd $(GIT_DIR)/Platform/$(PLATFORM)/Build && \
-		sed -i -e 's/BIN_DIR = ..\/..\/Bin/CFG=lib\nCFLAGS+=-O3 -msse3\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB) -Wl,-rpath,$(ENGINE_LIB)\nLIB_DIRS=$(OPENNI_LIB)\nBIN_DIR=$(ENGINE)/g' EngineLibMakefile && \
-		sed -i -e 's/\/usr\/include\/ni\/CommonMakefile/$(OPENNI_INCLUDE)\/ni\/CommonMakefile/g' EngineLibMakefile && \
-		sed -i -e 's/\/usr\/include/$(OPENNI_INCLUDE)/g' EngineLibMakefile && \
+		sed -Ei -e 's/BIN_DIR = ..\/..\/Bin/CFG=lib\nCFLAGS+=-O3 -msse3\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB) -Wl,-rpath,$(ENGINE_LIB)\nLIB_DIRS=$(OPENNI_LIB)\nBIN_DIR=$(ENGINE)/g' EngineLibMakefile && \
+		sed -Ei -e 's/\/usr\/include\/ni\/CommonMakefile/$(OPENNI_INCLUDE)\/ni\/CommonMakefile/g' EngineLibMakefile && \
+		sed -Ei -e 's/\/usr\/include/$(OPENNI_INCLUDE)/g' EngineLibMakefile && \
 		cd -
 	@echo "### Patching the output library for XnServer..."
 	@cd $(GIT_DIR)/Platform/$(PLATFORM)/Build/Utils && \
-		sed -i -e 's/BIN_DIR = ..\/..\/..\/Bin/CFG=bin\nCFLAGS+=-O3 -msse3\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB) -Wl,-rpath,$(ENGINE_LIB)\nLIB_DIRS=$(OPENNI_LIB) $(ENGINE_LIB)\nBIN_DIR=$(ENGINE)/g' EngineUtilMakefile && \
-		sed -i -e 's/\/usr\/include\/ni\/CommonMakefile/$(OPENNI_INCLUDE)\/ni\/CommonMakefile/g' EngineUtilMakefile && \
-		sed -i -e 's/\/usr\/include/$(OPENNI_INCLUDE)/g' EngineUtilMakefile && \
+		sed -Ei -e 's/BIN_DIR = ..\/..\/..\/Bin/CFG=bin\nCFLAGS+=-O3 -msse3\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB) -Wl,-rpath,$(ENGINE_LIB)\nLIB_DIRS=$(OPENNI_LIB) $(ENGINE_LIB)\nBIN_DIR=$(ENGINE)/g' EngineUtilMakefile && \
+		sed -Ei -e 's/\/usr\/include\/ni\/CommonMakefile/$(OPENNI_INCLUDE)\/ni\/CommonMakefile/g' EngineUtilMakefile && \
+		sed -Ei -e 's/\/usr\/include/$(OPENNI_INCLUDE)/g' EngineUtilMakefile && \
 		cd -
 	@-cd $(GIT_DIR)/Source/XnDeviceSensorV2 && \
-		sed -i -e 's/\/usr\/bin/$(ENGINE_BIN)/g' XnSensorClient.cpp && \
+		sed -Ei -e 's/\/usr\/bin/$(ENGINE_BIN)/g' XnSensorClient.cpp && \
 		cd -
 	cd $(GIT_DIR)/Platform/$(PLATFORM)/Build && make && cd -
 	@cp -r $(GIT_DIR)/Data/GlobalDefaults.ini lib/
@@ -49,7 +49,8 @@ installed: $(GIT_DIR)
 clean:
 	-cd $(GIT_DIR)/Platform/$(PLATFORM)/Build && make clean && cd -
 	rm -rf $(GIT_DIR)/Platform/$(PLATFORM)/CreateRedist/Final/*
-	rm -rf bin lib config installed
+	rm -f lib/*.so
+	rm -rf bin config installed
 
 wipe:
 	rm -rf bin lib config installed

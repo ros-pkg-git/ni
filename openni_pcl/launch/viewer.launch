@@ -1,0 +1,6 @@
+<launch>
+  <node pkg="openni_pcl" type="openni_viewer" name="openni_viewer" output="screen">
+    <remap from="~input" to="/camera/depth/points2" />
+  </node>
+</launch>
+

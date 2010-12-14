@@ -32,40 +32,48 @@
  *  POSSIBILITY OF SUCH DAMAGE.
  *
  */
+#include <pluginlib/class_list_macros.h>
+#include "openni_pcl/openni_viewer_nodelet.h"
+#include <pcl/point_types.h>
 
-#ifndef OPENNI_NODELET_OPENNI_H_
-#define OPENNI_NODELET_OPENNI_H_
+typedef openni_pcl::OpenNIViewerNodelet OpenNIViewer;
 
-#include <nodelet/nodelet.h>
-#include "openni_camera/openni.h"
-#include <boost/thread.hpp>
+PLUGINLIB_DECLARE_CLASS (openni_pcl, OpenNIViewer, OpenNIViewer, nodelet::Nodelet);
 
-namespace openni_camera
+void
+openni_pcl::OpenNIViewerNodelet::onInit ()
 {
-  ////////////////////////////////////////////////////////////////////////////////////////////
-  class OpenNIDriverNodelet : public nodelet::Nodelet
-  {
-    public:
-      virtual ~OpenNIDriverNodelet ()
-      {
-        spinthread_->join ();
-        delete spinthread_;
-
-        if (driver_)
-          delete driver_;
-      }
-    private:
-      /** \brief Nodelet initialization routine. */
-      virtual void onInit ();
-  
-      /** \brief Spin. */
-      void spin (); 
-
-      /** \brief Object holding a pointer to the driver. */
-      OpenNIDriver* driver_;
-  
-      boost::thread* spinthread_;
-  };
+  pnh_.reset (new ros::NodeHandle (getMTPrivateNodeHandle ()));
+  sub_.subscribe (*pnh_, "input", 1, bind (&OpenNIViewerNodelet::cloud_cb, this, _1));
+  viewer_.reset (new pcl_visualization::PCLVisualizer ("OpenNI Kinect Viewer"));
+  ROS_INFO ("[OpenNIViewer] Nodelet initialized.");
 }
 
-#endif  //#ifndef OPENNI_NODELET_OPENNI_H_
+void
+openni_pcl::OpenNIViewerNodelet::cloud_cb (const sensor_msgs::PointCloud2ConstPtr& cloud)
+{
+  boost::mutex::scoped_lock lock (mutex_);
+
+  // Save the last point size used
+  double psize;
+  //viewer_->getPointCloudRenderingProperties (pcl_visualization::PCL_VISUALIZER_POINT_SIZE, psize, "cloud");
+
+  viewer_->removePointCloud ("cloud");
+  
+  // Convert to PointCloud<T>
+  pcl::PointCloud<pcl::PointXYZ> cloud_xyz;
+  pcl::fromROSMsg (*cloud, cloud_xyz);
+
+  pcl_visualization::PointCloudColorHandlerRGBField<sensor_msgs::PointCloud2> h (*cloud);
+  viewer_->addPointCloud (
+      cloud_xyz, 
+      boost::make_shared<pcl_visualization::PointCloudColorHandlerRGBField<sensor_msgs::PointCloud2> >(h), 
+      "cloud");
+
+  // Set the point size
+  //viewer_->setPointCloudRenderingProperties (pcl_visualization::PCL_VISUALIZER_POINT_SIZE, psize, "cloud");
+
+  // Spin
+  viewer_->spinOnce (10);
+}
+
