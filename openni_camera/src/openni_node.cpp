@@ -58,8 +58,6 @@ int
   openni_camera::OpenNIDriver k (comm_nh, param_nh);
   if (!k.init (device_id))
     return (-1);
-  if (!k.start ())
-    return (-1);
 
   k.spin ();
   return (0);
