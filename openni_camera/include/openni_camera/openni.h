@@ -58,8 +58,6 @@
 #include <dynamic_reconfigure/server.h>
 #include <openni_camera/OpenNIConfig.h>
 
-#include <Eigen3/Core>
-
 #include <XnOS.h>
 #include <XnCppWrapper.h>
 
@@ -140,8 +138,6 @@ namespace openni_camera
       bool updateDeviceSettings();
 
       static const double rgb_focal_length_;
-    public:
-      EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
   };
 
 } // namespace openni_camera
