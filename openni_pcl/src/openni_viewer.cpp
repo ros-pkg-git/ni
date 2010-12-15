@@ -36,12 +36,15 @@
  */
 
 // ROS core
+#include <signal.h>
 #include <ros/ros.h>
 #include <boost/thread/mutex.hpp>
+#include <boost/thread.hpp>
 // PCL includes
 #include <pcl/point_types.h>
 #include <pcl_visualization/pcl_visualizer.h>
 
+// Global data
 sensor_msgs::PointCloud2ConstPtr cloud_, cloud_old_;
 boost::mutex m;
 
@@ -49,15 +52,90 @@ void
 cloud_cb (const sensor_msgs::PointCloud2ConstPtr& cloud)
 {
   m.lock ();
+  printf ("\rPointCloud with %d data points (%s), stamp %f, and frame %s.",
+      cloud->width * cloud->height, pcl::getFieldsList (*cloud).c_str (), cloud->header.stamp.toSec (), cloud->header.frame_id.c_str ());
   cloud_ = cloud;
   m.unlock ();
+}
+
+void
+updateVisualization ()
+{
+  pcl::PointCloud<pcl::PointXYZ> cloud_xyz;
+  pcl::PointCloud<pcl::PointXYZRGB> cloud_xyz_rgb;
+
+  ros::Duration d (0.01);
+  bool rgb = false;
+  std::vector<sensor_msgs::PointField> fields;
+  
+  // Create the visualizer
+  pcl_visualization::PCLVisualizer p ("OpenNI Kinect Viewer");
+
+  // Add a coordinate system to screen
+  p.addCoordinateSystem (0.1);
+
+  while (true)
+  {
+    d.sleep ();
+    // If no cloud received yet, continue
+    if (!cloud_)
+      continue;
+
+    p.spinOnce (1);
+
+    if (cloud_old_ == cloud_)
+      continue;
+    
+    m.lock ();
+    
+    // Convert to PointCloud<T>
+    if (pcl::getFieldIndex (*cloud_, "rgb") != -1)
+    {
+      rgb = true;
+      pcl::fromROSMsg (*cloud_, cloud_xyz_rgb);
+    }
+    else
+    {
+      rgb = false;
+      pcl::fromROSMsg (*cloud_, cloud_xyz);
+      pcl::getFields (cloud_xyz, fields);
+    }
+    cloud_old_ = cloud_;
+    m.unlock ();
+
+    // Save the last point size used
+    //p.getPointCloudRenderingProperties (pcl_visualization::PCL_VISUALIZER_POINT_SIZE, psize, "cloud");
+
+    p.removePointCloud ("cloud");
+    
+    // If no RGB data present, use a simpler white handler
+    if (rgb && pcl::getFieldIndex (cloud_xyz_rgb, "rgb", fields) != -1)
+    {
+      pcl_visualization::PointCloudColorHandlerRGBField<pcl::PointXYZRGB> color_handler (cloud_xyz_rgb);
+      p.addPointCloud (cloud_xyz_rgb, color_handler, "cloud");
+    }
+    else
+    {
+      pcl_visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> color_handler (cloud_xyz, 255, 0, 255);
+      p.addPointCloud (cloud_xyz, color_handler, "cloud");
+    }
+
+    // Set the point size
+    //p.setPointCloudRenderingProperties (pcl_visualization::PCL_VISUALIZER_POINT_SIZE, psize, "cloud");
+  }
+}
+
+void
+  sigIntHandler (int sig)
+{
+  exit (0);
 }
 
 /* ---[ */
 int
 main (int argc, char** argv)
 {
-  ros::init (argc, argv, "openni_viewer");
+  ros::init (argc, argv, "openni_viewer", ros::init_options::NoSigintHandler);
   ros::NodeHandle nh ("~");
 
   // Create a ROS subscriber
@@ -65,45 +143,15 @@ main (int argc, char** argv)
 
   ROS_INFO ("Subscribing to %s for PointCloud2 messages...", nh.resolveName ("input").c_str ());
 
-  pcl_visualization::PCLVisualizer p (argc, argv, "OpenNI Kinect Viewer");
-  pcl::PointCloud<pcl::PointXYZ> cloud_xyz;
-  pcl_visualization::PointCloudColorHandler<sensor_msgs::PointCloud2>::Ptr color_handler;
+  signal (SIGINT, sigIntHandler);
 
-  ros::Duration d (0.01);
-  double psize = 0;
-  while (nh.ok ())
-  {
-    // Spin
-    ros::spinOnce ();
-    d.sleep ();
+  boost::thread visualization_thread (&updateVisualization);
 
-    // If no cloud received yet, continue
-    if (!cloud_)
-      continue;
+  // Spin
+  ros::spin ();
 
-    p.spinOnce (1);
-
-    if (cloud_ == cloud_old_)
-      continue;
-
-    // Save the last point size used
-    //p.getPointCloudRenderingProperties (pcl_visualization::PCL_VISUALIZER_POINT_SIZE, psize, "cloud");
-
-    p.removePointCloud ("cloud");
-    // Convert to PointCloud<T>
-    m.lock ();
-    pcl::fromROSMsg (*cloud_, cloud_xyz);
- 
-    color_handler.reset (new pcl_visualization::PointCloudColorHandlerRGBField<sensor_msgs::PointCloud2> (*cloud_));
-    p.addPointCloud (cloud_xyz, color_handler, "cloud");
-
-    // Set the point size
-    //p.setPointCloudRenderingProperties (pcl_visualization::PCL_VISUALIZER_POINT_SIZE, psize, "cloud");
-
-    cloud_old_ = cloud_;
-    m.unlock ();
-  }
-
+  // Join, delete, exit
+  visualization_thread.join ();
   return (0);
 }
 /* ]--- */
