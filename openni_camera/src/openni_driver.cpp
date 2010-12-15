@@ -957,12 +957,12 @@ void OpenNIDriver::bayer2RGB ( const xn::ImageMetaData& bayer, sensor_msgs::Imag
   else
   {
     // get each or each 2nd pixel group to find rgb values!
-    unsigned bayerXStep = bayer.XRes() / image.width;
-    unsigned bayerYSkip = (bayer.YRes() / image.height - 1) * bayer.XRes();
+    register unsigned bayerXStep = bayer.XRes() / image.width;
+    register unsigned bayerYSkip = (bayer.YRes() / image.height - 1) * bayer.XRes();
 
     // Downsampling and debayering at once
-    const XnUInt8* bayer_buffer = bayer.Data();
-    unsigned char* rgb_buffer = (unsigned char*)&image.data[0];
+    register const XnUInt8* bayer_buffer = bayer.Data();
+    register unsigned char* rgb_buffer = (unsigned char*)&image.data[0];
 
     for( register unsigned yIdx = 0; yIdx < image.height; ++yIdx, bayer_buffer += bayerYSkip ) // skip a line
     {
@@ -979,10 +979,10 @@ void OpenNIDriver::bayer2RGB ( const xn::ImageMetaData& bayer, sensor_msgs::Imag
 void OpenNIDriver::bayer2Gray ( const xn::ImageMetaData& bayer, sensor_msgs::Image& image, int method )
 {
   // fast method -> simply takes each or each 2nd pixel-group to get gray values out
-  unsigned bayer_step = bayer.XRes() / image.width;
-  unsigned bayer_skip = (bayer.YRes() / image.height - 1) * bayer.XRes();
-  const XnUInt8* bayer_buffer = bayer.Data();
-  unsigned char* gray_buffer = (unsigned char*)&image.data[0];
+  register unsigned bayer_step = bayer.XRes() / image.width;
+  register unsigned bayer_skip = (bayer.YRes() / image.height - 1) * bayer.XRes();
+  register const XnUInt8* bayer_buffer = bayer.Data();
+  register unsigned char* gray_buffer = (unsigned char*)&image.data[0];
 
   for( register unsigned yIdx = 0; yIdx < bayer.YRes()-1; yIdx += bayer_step, bayer_buffer += bayer_skip ) // skip a line
   {
