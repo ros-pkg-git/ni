@@ -30,5 +30,3 @@ target_link_libraries (openni_nodelets openni_driver)
 
 rosbuild_add_executable (openni_node src/openni_node.cpp)
 target_link_libraries (openni_node openni_driver)
-
-rosbuild_add_executable (calibration_synchronizer src/calibration_synchronizer.cpp)
