@@ -57,15 +57,15 @@ const double OpenNIDriver::rgb_focal_length_ = 525;
 
 typedef union
 {
-	 struct /*anonymous*/
-   {
+  struct /*anonymous*/
+  {
     unsigned char Blue; // Blue channel
     unsigned char Green; // Green channel
     unsigned char Red; // Red channel
     unsigned char Alpha; // alpha
-   };
-   float float_value;
-   long long_value;
+  };
+  float float_value;
+  long long_value;
 } RGBValue;
 
 /** \brief Constructor */
@@ -91,26 +91,18 @@ OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   ReconfigureServer::CallbackType f = boost::bind(&OpenNIDriver::configCb, this, _1, _2);
   reconfigure_server_.setCallback(f);
   
-  // Assemble the point cloud data
-  std::string openni_depth_frame;
-  //param_nh.param ("openni_depth_frame", openni_depth_frame, std::string ("/openni_depth_frame")); //Publish into optical frame as it has z forward.  
+  // Set the frame IDs. The optical frames are all Z-forward.
+  std::string openni_depth_frame, openni_RGB_frame;
   param_nh.param ("openni_depth_optical_frame", openni_depth_frame, std::string ("/openni_depth_optical_frame"));
-  // @Radu: is there any point in still publishing sensor_msgs/PointCloud? Don't we want to deprecate this at some point?
-
-  /// @todo "u" and "v" channels?
-  cloud2_.header.frame_id = openni_depth_frame;
+  param_nh.param ("openni_rgb_optical_frame", openni_RGB_frame, std::string ("/openni_rgb_optical_frame"));
   
-  // set frame ids
+  cloud2_.header.frame_id = openni_depth_frame;  
   disp_image_.header.frame_id = openni_depth_frame;
   disp_image_.image.encoding = "32FC1";
+  /// @todo IR (when we support it) is the same as the depth frame.  
 
-  std::string openni_RGB_frame;
-  //  param_nh.param ("openni_rgb_frame", openni_RGB_frame, std::string ("/openni_rgb_frame"));
-  param_nh.param ("openni_rgb_optical_frame", openni_RGB_frame, std::string ("/openni_rgb_optical_frame"));
-  rgb_image_.header.frame_id = openni_RGB_frame;
-
-  // IR is the same as the depth frame.  
-  gray_image_.header.frame_id = openni_depth_frame;
+  rgb_image_ .header.frame_id = openni_RGB_frame;
+  gray_image_.header.frame_id = openni_RGB_frame;
 
   // Publishers and subscribers
   image_transport::ImageTransport it(comm_nh);
@@ -720,7 +712,6 @@ bool OpenNIDriver::updateDeviceSettings()
       ROS_ERROR ("[OpenNIDriver] Error setting the image input format to Uncompressed 8-bit BAYER!");
   }
   
-  /// @todo Just have a "kinect_mode" parameter to flip all the switches?
   // RegistrationType should be 2 (software) for Kinect, 1 (hardware) for PS
   int registration_type = 0;
   if (param_nh_.getParam ("registration_type", registration_type))
