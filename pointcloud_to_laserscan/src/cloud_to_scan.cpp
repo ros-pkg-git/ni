@@ -76,11 +76,8 @@ private:
     output->range_min = 0.45;
     output->range_max = 10.0;
     
-
-    for (double i = output->angle_min; i <= output->angle_max; i+= output->angle_increment)
-    {
-      output->ranges.push_back(output->range_max + 1.0);
-    }
+    uint32_t ranges_size = std::ceil((output->angle_max - output->angle_min) / output->angle_increment);
+    output->ranges.assign(ranges_size, output->range_max + 1.0);
 
     pcl::PointCloud<pcl::PointXYZ> cloud;
     pcl::fromROSMsg(*input, cloud);
