@@ -69,17 +69,19 @@ main (int argc, char** argv)
   pcl::PointCloud<pcl::PointXYZ> cloud_xyz;
   pcl_visualization::PointCloudColorHandler<sensor_msgs::PointCloud2>::Ptr color_handler;
 
+  ros::Duration d (0.01);
   double psize = 0;
   while (nh.ok ())
   {
     // Spin
     ros::spinOnce ();
-    ros::Duration (0.0001).sleep ();
-    p.spinOnce (1);
+    d.sleep ();
 
     // If no cloud received yet, continue
     if (!cloud_)
       continue;
+
+    p.spinOnce (1);
 
     if (cloud_ == cloud_old_)
       continue;
