@@ -57,15 +57,15 @@ const double OpenNIDriver::rgb_focal_length_ = 525;
 
 typedef union
 {
-	 struct /*anonymous*/
-   {
+  struct /*anonymous*/
+  {
     unsigned char Blue; // Blue channel
     unsigned char Green; // Green channel
     unsigned char Red; // Red channel
     unsigned char Alpha; // alpha
-   };
-   float float_value;
-   long long_value;
+  };
+  float float_value;
+  long long_value;
 } RGBValue;
 
 /** \brief Constructor */
