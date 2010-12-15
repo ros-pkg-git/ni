@@ -87,7 +87,8 @@ OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   
   // Assemble the point cloud data
   std::string openni_depth_frame;
-  param_nh.param ("openni_depth_frame", openni_depth_frame, std::string ("/openni_depth"));
+  //param_nh.param ("openni_depth_frame", openni_depth_frame, std::string ("/openni_depth_frame")); //Publish into optical frame as it has z forward.  
+  param_nh.param ("openni_depth_optical_frame", openni_depth_frame, std::string ("/openni_depth_optical_frame"));
   // @Radu: is there any point in still publishing sensor_msgs/PointCloud? Don't we want to deprecate this at some point?
 
   /// @todo "u" and "v" channels?
@@ -98,12 +99,12 @@ OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   depth_image_.header.frame_id = openni_depth_frame;
 
   std::string openni_RGB_frame;
-  param_nh.param ("openni_rgb_frame", openni_RGB_frame, std::string ("/openni_rgb"));
+  //  param_nh.param ("openni_rgb_frame", openni_RGB_frame, std::string ("/openni_rgb_frame"));
+  param_nh.param ("openni_rgb_optical_frame", openni_RGB_frame, std::string ("/openni_rgb_optical_frame"));
   rgb_image_.header.frame_id = openni_RGB_frame;
 
-  std::string openni_IR_frame;
-  param_nh.param ("openni_ir_frame", openni_RGB_frame, std::string ("/openni_ir"));
-  ir_image_.header.frame_id = openni_IR_frame;
+  // IR is the same as the depth frame.  
+  ir_image_.header.frame_id = openni_depth_frame;
 
   // Publishers and subscribers
   image_transport::ImageTransport it(comm_nh);

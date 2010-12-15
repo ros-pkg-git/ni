@@ -44,7 +44,7 @@ class CloudToScan : public nodelet::Nodelet
 {
 public:
   //Constructor
-  CloudToScan(): min_height_(0.0), max_height_(0.25), output_frame_id_("/openni_laser")
+  CloudToScan(): min_height_(0.0), max_height_(0.25), output_frame_id_("/openi_depth_frame")
   {
   };
 
