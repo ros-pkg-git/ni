@@ -40,9 +40,13 @@
 
 #include "openni_camera/openni.h"
 #include <sensor_msgs/image_encodings.h>
-#include <sensor_msgs/distortion_models.h>
 #include <boost/make_shared.hpp>
 #include <vector>
+
+// Branch on whether we have the changes to CameraInfo in unstable
+#if ROS_VERSION_MINIMUM(1, 3, 0)
+#include <sensor_msgs/distortion_models.h>
+#endif
 
 using namespace std;
 
@@ -651,9 +655,19 @@ bool OpenNIDriver::updateDeviceSettings()
 
   // got baseline update disparity image
   disp_image_.T = baseline_;
-  disp_image_.f  = focal_length_ * (double)disp_image_.image.width / 640.0;
+  disp_image_.f  = focal_length_;
+  /// @todo Make sure values below are accurate
+  disp_image_.min_disparity = 0.0;
+  disp_image_.max_disparity = disp_image_.T * disp_image_.f / 0.3;
+  disp_image_.delta_d = 0.125;
 
+  // No distortion (yet!)
+#if ROS_VERSION_MINIMUM(1, 3, 0)
   rgb_info_.D = std::vector<double>( 5, 0.0 );
+  rgb_info_.distortion_model = sensor_msgs::distortion_models::PLUMB_BOB;
+#else
+  rgb_info_.D.assign( 0.0 );
+#endif
   rgb_info_.K.assign( 0.0 );
   rgb_info_.R.assign( 0.0 );
   rgb_info_.P.assign( 0.0 );
@@ -662,9 +676,8 @@ bool OpenNIDriver::updateDeviceSettings()
   rgb_info_.K[2] = image_width >> 1;
   rgb_info_.K[5] = image_height >> 1;
   rgb_info_.K[8] = 1.0;
-  rgb_info_.distortion_model = sensor_msgs::distortion_models::PLUMB_BOB;
 
-  // no rotation: idendity
+  // no rotation: identity
   rgb_info_.R[0] = rgb_info_.R[4] = rgb_info_.R[8] = 1.0;
 
   // no rotation, no translation => P=K(I|0)=(K|0)
