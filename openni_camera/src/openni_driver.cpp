@@ -128,7 +128,7 @@ OpenNIDriver::~OpenNIDriver ()
 bool OpenNIDriver::isRGBRequired() const
 {
   return ( ( pub_rgb_.getNumSubscribers() > 0 ) ||
-           ( pub_depth_points2_.getNumSubscribers() > 0 && config_.point_cloud_type == 2 )
+           ( pub_depth_points2_.getNumSubscribers() > 0 && config_.point_cloud_type == OpenNI_XYZRGB )
          );
 }
 
@@ -203,13 +203,13 @@ OpenNIDriver::spin ()
       }
       //cout << "OK" << endl;
 
-      if (config_.point_cloud_type == 1)
+      if (config_.point_cloud_type != OpenNI_XYZ_unregistered)
       {
         //cout << "switching on registration..." << flush;
         status = depth_generator_.GetAlternativeViewPointCap().SetViewPoint( image_generator_ );
         if (status != XN_STATUS_OK)
         {
-          ROS_ERROR ("[OpenNIDriver::spin] Error in registering depth stream (): %s", xnGetStatusString (status));
+          ROS_ERROR ("[OpenNIDriver::spin] Error in switching on depth stream registration: %s", xnGetStatusString (status));
           return (false);
         }
         //cout << "OK" << endl;
@@ -217,10 +217,10 @@ OpenNIDriver::spin ()
       else
       {
         //cout << "switching off registration..." << flush;
-        status = depth_generator_.GetAlternativeViewPointCap().SetViewPoint( image_generator_ );
+        status = depth_generator_.GetAlternativeViewPointCap().ResetViewPoint();
         if (status != XN_STATUS_OK)
         {
-          ROS_ERROR ("[OpenNIDriver::spin] Error in registering depth stream (): %s", xnGetStatusString (status));
+          ROS_ERROR ("[OpenNIDriver::spin] Error in switching off depth stream registration: %s", xnGetStatusString (status));
           return (false);
         }
         //cout << "OK" << endl;
@@ -344,7 +344,7 @@ OpenNIDriver::publish ()
       int centerY = cloud2_.height >> 1;
       constant *= depthStep;
 
-      if(config_.point_cloud_type == 2)
+      if(config_.point_cloud_type == OpenNI_XYZRGB)
       {
         unsigned char* rgb_buffer = (unsigned char*)&rgb_image_.data[0];
         RGBValue color;
@@ -731,7 +731,7 @@ bool OpenNIDriver::updateDeviceSettings()
     return (false);
   }
 
-  if (config_.point_cloud_type == 0) // not registered pc
+  if (config_.point_cloud_type == OpenNI_XYZ_unregistered) // not registered pc
   {
     //cout << "switching off registration..." << flush;
     status = depth_generator_.GetAlternativeViewPointCap().ResetViewPoint();
