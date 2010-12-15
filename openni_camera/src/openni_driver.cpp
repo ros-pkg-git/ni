@@ -106,9 +106,9 @@ OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
 
   // Publishers and subscribers
   image_transport::ImageTransport it(comm_nh);
-  pub_rgb_     = it.advertiseCamera ("rgb/image_raw", 15);
-  pub_gray_    = it.advertiseCamera ("mono/image_raw", 15);
-  pub_disparity_ = comm_nh_.advertise<stereo_msgs::DisparityImage>("/primesense/disparity", 15 );
+  pub_rgb_     = it.advertiseCamera ("rgb/image_color", 15);
+  pub_gray_    = it.advertiseCamera ("rgb/image_mono", 15);
+  pub_disparity_ = comm_nh_.advertise<stereo_msgs::DisparityImage>("depth/disparity", 15 );
   pub_depth_points2_ = comm_nh.advertise<sensor_msgs::PointCloud2>("depth/points2", 15);
 
   //cout << "OpenNIDriver::OpenNIDriver...end" << endl;
