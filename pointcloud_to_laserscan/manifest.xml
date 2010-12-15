@@ -1,0 +1,19 @@
+<package>
+  <description brief="pointcloud_to_laserscan">
+
+     pointcloud_to_laserscan
+
+  </description>
+  <author>Tully Foote</author>
+  <license>BSD</license>
+  <review status="unreviewed" notes=""/>
+  <url>http://ros.org/wiki/pointcloud_to_laserscan</url>
+  <depend package="nodelet"/>
+  <depend package="sensor_msgs"/>
+  <depend package="pcl"/>
+  <export>
+    <nodelet plugin="${prefix}/nodelets.xml" />
+  </export>
+</package>
+
+
