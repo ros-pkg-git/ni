@@ -5,4 +5,5 @@
     <param name="image_input_format" value="6" />
     <rosparam command="load" file="$(find openni_camera)/info/openni_params.yaml" />
   </node>
+  <node pkg="tf" type="static_transform_publisher" name="kinect_laser_frame_publisher" args="0 0 0 0 -1.57 1.57 /openni_depth /openni_laser 100" />  
 </launch>
