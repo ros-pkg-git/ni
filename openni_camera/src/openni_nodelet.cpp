@@ -50,11 +50,6 @@ openni_camera::OpenNIDriverNodelet::onInit ()
   int device_id;
   param_nh.param ("device_id", device_id, 0);
 
-  if (!driver_->init (device_id))
-    return;
-  if (!driver_->start ())
-    return;
-
   spinthread_ = new boost::thread (boost::bind (&OpenNIDriverNodelet::spin, this));
 }
 

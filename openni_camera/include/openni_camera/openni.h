@@ -49,6 +49,7 @@
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/CameraInfo.h>
 #include <sensor_msgs/Imu.h>
+#include <stereo_msgs/DisparityImage.h>
 
 #include <ros/ros.h>
 #include <ros/package.h>
@@ -62,6 +63,9 @@
 #include <XnOS.h>
 #include <XnCppWrapper.h>
 
+#define AVG(a,b) (((int)(a) + (int)(b)) >> 1)
+#define AVG4(a,b,c,d) (((int)(a) + (int)(b) + (int)(c) + (int)(d)) >> 2)
+
 namespace openni_camera
 {
   class OpenNIDriver
@@ -69,18 +73,10 @@ namespace openni_camera
     public:
       /** \brief Constructor */
       OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh);
+      
+      /** \brief Destructor */
       virtual ~OpenNIDriver ();
-
-      /** \brief Start (resume) the data acquisition process. */
-      bool start ();
-      /** \brief Stop (pause) the data acquisition process. */
-      void stop ();
-
-      /** \brief Initialize a OpenNI device, given an index.
-        * \param index the index of the device to initialize
-        */
-      bool init (int index=-1);
-
+      
       /** \brief Spin (!)
         */
       bool spin ();
@@ -88,29 +84,30 @@ namespace openni_camera
     protected:
       /** \brief Send the data over the network. */
       void publish ();
-
-      void onSubscribeDepth( const ros::SingleSubscriberPublisher& subscriber );
-      void onUnsubscribeDepth( const ros::SingleSubscriberPublisher& subscriber );
-      void onSubscribeImage( const image_transport::SingleSubscriberPublisher& subscriber );
-      void onUnsubscribeImage( const image_transport::SingleSubscriberPublisher& subscriber );
-
+      
       /** \brief An OpenNI context object. */
       xn::Context context_;
       /** \brief Depth generator object. */
       xn::DepthGenerator depth_generator_;
       /** \brief Image generator object. */
       xn::ImageGenerator image_generator_;
-      /** \brief IR generator object. */
-      xn::IRGenerator ir_generator_;
 
-      typedef enum{ RGB888, IR } ImageType;
    private:
+      bool isRGBRequired() const;
+      bool isGrayRequired() const;
+      bool isImageStreamRequired() const;
+      bool isDepthStreamRequired() const;
+      
+      void bayer2RGB ( const xn::ImageMetaData& bayer, sensor_msgs::Image& image, int method = 0 );
+      void bayer2Gray ( const xn::ImageMetaData& bayer, sensor_msgs::Image& image, int method = 0 );
+      //void disparity_downsampling( )
       /** \brief A copy of the communication NodeHandle. */
       ros::NodeHandle comm_nh_;
       ros::NodeHandle param_nh_;
 
       /** \brief ROS publishers. */
-      image_transport::CameraPublisher pub_rgb_, pub_depth_, pub_ir_;
+      image_transport::CameraPublisher pub_rgb_, pub_gray_;
+      ros::Publisher pub_disparity_;
       ros::Publisher pub_depth_points2_;
 
       /** \brief Dynamic reconfigure. */
@@ -119,27 +116,30 @@ namespace openni_camera
       ReconfigureServer reconfigure_server_;
       Config config_;
 
-      unsigned width_;
-      unsigned height_;
       /** \brief True if we're acquiring images. */
-      bool started_;
+      bool running_;
 
       XnDouble pixel_size_, baseline_;
       XnUInt64 focal_length_, shadow_value_, no_sample_value_, F_;
 
       /// @todo May actually want to allocate each time when using nodelets
       /** \brief Image data. */
-      sensor_msgs::Image rgb_image_, depth_image_, ir_image_;
+      sensor_msgs::Image rgb_image_;
+      /** \brief Image data. */
+      sensor_msgs::Image gray_image_;
       /** \brief PointCloud2 data. */
       sensor_msgs::PointCloud2 cloud2_;
       /** \brief Camera info data. */
-      sensor_msgs::CameraInfo rgb_info_, depth_info_, ir_info_;
+      sensor_msgs::CameraInfo rgb_info_;
+      /** \brief Disparity Image */
+      stereo_msgs::DisparityImage disp_image_;
 
       /** \brief Callback for dynamic_reconfigure */
       void configCb (Config &config, uint32_t level);
 
       bool updateDeviceSettings();
-    
+
+      static const double rgb_focal_length_;
     public:
       EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
   };

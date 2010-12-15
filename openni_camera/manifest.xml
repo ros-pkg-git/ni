@@ -25,6 +25,7 @@
   <depend package="camera_info_manager" />
   <depend package="image_transport" />
   <depend package="sensor_msgs" />
+  <depend package="stereo_msgs"/>
   <depend package="ps_engine" />
   <depend package="openni" />
   <depend package="dynamic_reconfigure" />
