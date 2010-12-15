@@ -85,7 +85,7 @@ OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
     ROS_ERROR ("[OpenNIDriver] Init: %s", xnGetStatusString (status));
     return;
   }
-  ROS_INFO ("[OpenNIDriver] Initialization successful.");
+//  ROS_INFO ("[OpenNIDriver] Initialization successful.");
 
   // Set up reconfigure server
   ReconfigureServer::CallbackType f = boost::bind(&OpenNIDriver::configCb, this, _1, _2);
@@ -628,20 +628,20 @@ bool OpenNIDriver::updateDeviceSettings()
     // Read parameters from the camera
     if (depth_generator_.GetRealProperty ("ZPPS", pixel_size_) != XN_STATUS_OK)
       ROS_ERROR ("[OpenNIDriver] Could not read pixel size!");
-    else
-      ROS_INFO_STREAM ("[OpenNIDriver] Pixel size: " << pixel_size_);
+//    else
+//      ROS_INFO_STREAM ("[OpenNIDriver] Pixel size: " << pixel_size_);
 
     pixel_size_ *= 2.0;
 
     if (depth_generator_.GetIntProperty ("ZPD", F_) != XN_STATUS_OK)
       ROS_ERROR ("[OpenNIDriver] Could not read virtual plane distance!");
-    else
-      ROS_INFO_STREAM ("[OpenNIDriver] Virtual plane distance: " << F_);
+//    else
+//      ROS_INFO_STREAM ("[OpenNIDriver] Virtual plane distance: " << F_);
 
     if (depth_generator_.GetRealProperty ("LDDIS", baseline_) != XN_STATUS_OK)
       ROS_ERROR ("[OpenNIDriver] Could not read base line!");
-    else
-      ROS_INFO_STREAM ("[OpenNIDriver] Base line: " << baseline_);
+//    else
+//      ROS_INFO_STREAM ("[OpenNIDriver] Base line: " << baseline_);
 
     // baseline from cm -> meters
     baseline_ *= 0.01;
@@ -979,17 +979,30 @@ void OpenNIDriver::bayer2RGB ( const xn::ImageMetaData& bayer, sensor_msgs::Imag
 void OpenNIDriver::bayer2Gray ( const xn::ImageMetaData& bayer, sensor_msgs::Image& image, int method )
 {
   // fast method -> simply takes each or each 2nd pixel-group to get gray values out
-  unsigned bayerXStep = bayer.XRes() / image.width;
-  unsigned bayerYSkip = (bayer.YRes() / image.height - 1) * bayer.XRes();
+  unsigned bayer_step = bayer.XRes() / image.width;
+  unsigned bayer_skip = (bayer.YRes() / image.height - 1) * bayer.XRes();
   const XnUInt8* bayer_buffer = bayer.Data();
   unsigned char* gray_buffer = (unsigned char*)&image.data[0];
 
-  for( register unsigned yIdx = 0; yIdx < image.height; ++yIdx, bayer_buffer += bayerYSkip ) // skip a line
+  for( register unsigned yIdx = 0; yIdx < bayer.YRes()-1; yIdx += bayer_step, bayer_buffer += bayer_skip ) // skip a line
   {
-    for( register unsigned xIdx = 0; xIdx < image.width; ++xIdx, ++gray_buffer, bayer_buffer += bayerXStep )
+    for( register unsigned xIdx = 0; xIdx < bayer.XRes()-1; xIdx += bayer_step, ++gray_buffer, bayer_buffer += bayer_step )
     {
       *gray_buffer = AVG4( bayer_buffer[ bayer.XRes() ], bayer_buffer[0], bayer_buffer[ bayer.XRes() + 1], bayer_buffer[ 1 ]);
     }
+    if (bayer_step == 1)
+    {
+      // calculate last pixel in row = simply the previous pixel!
+      *gray_buffer = gray_buffer[-1];
+      bayer_buffer += bayer_step;
+      ++gray_buffer;
+    }
+  }
+
+  if (bayer_skip == 0)
+  {
+    // simply copy previous row as last one!
+    memcpy( gray_buffer, gray_buffer-image.width, image.width );
   }
 }
 } // namespace openni_camera
