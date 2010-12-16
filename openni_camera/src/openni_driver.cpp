@@ -40,6 +40,7 @@
 
 #include "openni_camera/openni.h"
 #include <sensor_msgs/image_encodings.h>
+#include <sensor_msgs/fill_image.h>
 #include <boost/make_shared.hpp>
 #include <vector>
 
@@ -106,8 +107,9 @@ OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
 
   // Publishers and subscribers
   image_transport::ImageTransport it(comm_nh);
-  pub_rgb_     = it.advertiseCamera ("rgb/image_color", 15);
+  pub_rgb_     = it.advertiseCamera ("rgb/image_color", 15); /// @todo 15 looks like overkill
   pub_gray_    = it.advertiseCamera ("rgb/image_mono", 15);
+  pub_depth_image_ = it.advertise ("depth/image_raw", 15);
   pub_disparity_ = comm_nh_.advertise<stereo_msgs::DisparityImage>("depth/disparity", 15 );
   pub_depth_points2_ = comm_nh.advertise<sensor_msgs::PointCloud2>("depth/points2", 15);
 
@@ -140,8 +142,9 @@ bool OpenNIDriver::isImageStreamRequired() const
 
 bool OpenNIDriver::isDepthStreamRequired() const
 {
-  return ( pub_depth_points2_.getNumSubscribers() > 0  ||
-           pub_disparity_.getNumSubscribers() > 0 );
+  return ( pub_depth_points2_.getNumSubscribers() > 0 ||
+           pub_disparity_.getNumSubscribers() > 0     ||
+           pub_depth_image_.getNumSubscribers() > 0 );
 }
 
 /** \brief Spin loop. */
@@ -268,6 +271,20 @@ void OpenNIDriver::processDepth ()
   
   xn::DepthMetaData depth_md;
   depth_generator_.GetMetaData( depth_md );
+
+  // Raw depth image
+  sensor_msgs::ImagePtr depth_ptr;
+  if (pub_depth_image_.getNumSubscribers () > 0 ||
+      (pub_depth_points2_.getNumSubscribers() > 0 && config_.point_cloud_type == OpenNI_XYZRGB))
+  {
+    depth_ptr = boost::make_shared<sensor_msgs::Image>();
+    depth_ptr->header.stamp = time;
+    depth_ptr->header.frame_id = disp_image_.header.frame_id;
+    sensor_msgs::fillImage(*depth_ptr, sensor_msgs::image_encodings::TYPE_16UC1,
+                           depth_md.YRes(), depth_md.XRes(), depth_md.XRes() * sizeof(uint16_t),
+                           (void*)depth_md.Data());
+    pub_depth_image_.publish(depth_ptr);
+  }
 
   // Disparity image
   if (pub_disparity_.getNumSubscribers () > 0)
@@ -765,7 +782,7 @@ bool OpenNIDriver::updateDeviceSettings()
   }
 
   cloud2_.point_step = offset;
-  cloud2_.row_step   = cloud2_.point_step * cloud2_.width;
+  cloud2_.row_step   = cloud2_.point_step * cloud2_.width; /// @todo *offset?
   cloud2_.data.resize (cloud2_.row_step   * cloud2_.height);
   cloud2_.is_dense = false;
 

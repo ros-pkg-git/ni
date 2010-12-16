@@ -120,6 +120,7 @@ namespace openni_camera
 
       /** \brief ROS publishers. */
       image_transport::CameraPublisher pub_rgb_, pub_gray_;
+      image_transport::Publisher pub_depth_image_;
       ros::Publisher pub_disparity_;
       ros::Publisher pub_depth_points2_;
 
@@ -128,9 +129,6 @@ namespace openni_camera
       typedef dynamic_reconfigure::Server<Config> ReconfigureServer;
       ReconfigureServer reconfigure_server_;
       Config config_;
-
-      /** \brief True if we're acquiring images. */
-      bool running_;
 
       XnDouble pixel_size_, baseline_;
       XnUInt64 focal_length_, shadow_value_, no_sample_value_, F_;
