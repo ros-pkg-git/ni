@@ -57,15 +57,15 @@ const double OpenNIDriver::rgb_focal_length_ = 525;
 
 typedef union
 {
-	 struct /*anonymous*/
-   {
+  struct /*anonymous*/
+  {
     unsigned char Blue; // Blue channel
     unsigned char Green; // Green channel
     unsigned char Red; // Red channel
     unsigned char Alpha; // alpha
-   };
-   float float_value;
-   long long_value;
+  };
+  float float_value;
+  long long_value;
 } RGBValue;
 
 /** \brief Constructor */
@@ -91,26 +91,18 @@ OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   ReconfigureServer::CallbackType f = boost::bind(&OpenNIDriver::configCb, this, _1, _2);
   reconfigure_server_.setCallback(f);
   
-  // Assemble the point cloud data
-  std::string openni_depth_frame;
-  //param_nh.param ("openni_depth_frame", openni_depth_frame, std::string ("/openni_depth_frame")); //Publish into optical frame as it has z forward.  
+  // Set the frame IDs. The optical frames are all Z-forward.
+  std::string openni_depth_frame, openni_RGB_frame;
   param_nh.param ("openni_depth_optical_frame", openni_depth_frame, std::string ("/openni_depth_optical_frame"));
-  // @Radu: is there any point in still publishing sensor_msgs/PointCloud? Don't we want to deprecate this at some point?
-
-  /// @todo "u" and "v" channels?
-  cloud2_.header.frame_id = openni_depth_frame;
+  param_nh.param ("openni_rgb_optical_frame", openni_RGB_frame, std::string ("/openni_rgb_optical_frame"));
   
-  // set frame ids
+  cloud2_.header.frame_id = openni_depth_frame;  
   disp_image_.header.frame_id = openni_depth_frame;
   disp_image_.image.encoding = "32FC1";
+  /// @todo IR (when we support it) is the same as the depth frame.  
 
-  std::string openni_RGB_frame;
-  //  param_nh.param ("openni_rgb_frame", openni_RGB_frame, std::string ("/openni_rgb_frame"));
-  param_nh.param ("openni_rgb_optical_frame", openni_RGB_frame, std::string ("/openni_rgb_optical_frame"));
-  rgb_image_.header.frame_id = openni_RGB_frame;
-
-  // IR is the same as the depth frame.  
-  gray_image_.header.frame_id = openni_depth_frame;
+  rgb_image_ .header.frame_id = openni_RGB_frame;
+  gray_image_.header.frame_id = openni_RGB_frame;
 
   // Publishers and subscribers
   image_transport::ImageTransport it(comm_nh);
@@ -720,7 +712,6 @@ bool OpenNIDriver::updateDeviceSettings()
       ROS_ERROR ("[OpenNIDriver] Error setting the image input format to Uncompressed 8-bit BAYER!");
   }
   
-  /// @todo Just have a "kinect_mode" parameter to flip all the switches?
   // RegistrationType should be 2 (software) for Kinect, 1 (hardware) for PS
   int registration_type = 0;
   if (param_nh_.getParam ("registration_type", registration_type))
@@ -765,67 +756,65 @@ void OpenNIDriver::bayer2RGB ( const xn::ImageMetaData& bayer, sensor_msgs::Imag
 {
   if (bayer.XRes() == image.width && bayer.YRes() == image.height)
   {
-    const XnUInt8 *s;
+    const XnUInt8 *bayer_pixel = bayer.Data();
     unsigned yIdx, xIdx;
     XnUInt8 v;
 
-    int ll = image.width;
-    int ll2 = image.width << 1;
+    int line_step = image.width;
+    int line_step2 = image.width << 1;
 
-    s = bayer.Data();
-    int pp2 = ll2 * 3;          // previous 2 color lines
-    int pp  = ll * 3;             // previous color line
-    unsigned char *cd = (unsigned char *)&image.data[0];
+    int rgb_line_step2 = line_step2 * 3;          // previous 2 color lines
+    int rgb_line_step  = line_step * 3;             // previous color line
+    unsigned char *rgb_pixel = (unsigned char *)&image.data[0];
 
     if (method == 0)
     {
       for (yIdx = 0; yIdx < image.height; yIdx += 2)
       {
         // red line (GRGR...)
-        for (xIdx=0; xIdx < image.width; xIdx += 2, cd += 6)
+        for (xIdx=0; xIdx < image.width; xIdx += 2, rgb_pixel += 6)
         {
-          //              *dd =
-          *( cd + 1 ) = *s++;   // green pixel
-          v = *s++;
-          *( cd + 3 ) = v;    // red pixel
-          *( cd ) = AVG(*(cd + 3), *(cd - 3)); // interpolated red pixel
+          *( rgb_pixel + 1 ) = *bayer_pixel++;   // green pixel
+          v = *bayer_pixel++;
+          *( rgb_pixel + 3 ) = v;    // red pixel
+          *( rgb_pixel ) = AVG(*(rgb_pixel + 3), *(rgb_pixel - 3)); // interpolated red pixel
           if (yIdx > 1)
           {
-            *( cd - pp) = AVG(*(cd-pp2+0), *(cd+0)); // interpolated red pixel
-            *( cd - pp + 3 ) = AVG(*(cd-pp2+3+0), *(cd+3+0)); // interpolated red pixel
-            *( cd - pp + 1 ) = ((int)*(cd+1) + (int)*(cd-pp-3+1) + (int)*(cd-pp+3+1) + (int)*(cd-pp2+1)) >> 2;
+            *( rgb_pixel - rgb_line_step) = AVG(*(rgb_pixel-rgb_line_step2+0), *(rgb_pixel+0)); // interpolated red pixel
+            *( rgb_pixel - rgb_line_step + 3 ) = AVG(*(rgb_pixel-rgb_line_step2+3+0), *(rgb_pixel+3+0)); // interpolated red pixel
+            *( rgb_pixel - rgb_line_step + 1 ) = ((int)*(rgb_pixel+1) + (int)*(rgb_pixel-rgb_line_step-3+1) + (int)*(rgb_pixel-rgb_line_step+3+1) + (int)*(rgb_pixel-rgb_line_step2+1)) >> 2;
           }
         }
 
         // blue line (BGBG...)
-        v = *s;
-        *(cd+2) = v;     // blue pixel
-        for ( xIdx = 0; xIdx < image.width - 2; xIdx+=2, cd += 6 )
+        v = *bayer_pixel;
+        *(rgb_pixel+2) = v;     // blue pixel
+        for ( xIdx = 0; xIdx < image.width - 2; xIdx+=2, rgb_pixel += 6 )
         {
-          s++;
+          bayer_pixel++;
           //              *(dd+1) =
-          *(cd+3+1) = *s++;      // green pixel
-          v = *s;
-          *(cd+6+2) = v;
-          *(cd+3+2) = AVG(*(cd+2), *(cd+6+2)); // interpolated blue pixel
+          *(rgb_pixel+3+1) = *bayer_pixel++;      // green pixel
+          v = *bayer_pixel;
+          *(rgb_pixel+6+2) = v;
+          *(rgb_pixel+3+2) = AVG(*(rgb_pixel+2), *(rgb_pixel+6+2)); // interpolated blue pixel
           if (yIdx > 1)
           {
-            *(cd-pp+2) = AVG(*(cd-pp2+2), *(cd+2)); // interpolated blue pixel
-            *(cd-pp+3+2) = AVG(*(cd-pp2+3+2), *(cd+3+2)); // interpolated blue pixel
+            *(rgb_pixel-rgb_line_step+2) = AVG(*(rgb_pixel-rgb_line_step2+2), *(rgb_pixel+2)); // interpolated blue pixel
+            *(rgb_pixel-rgb_line_step+3+2) = AVG(*(rgb_pixel-rgb_line_step2+3+2), *(rgb_pixel+3+2)); // interpolated blue pixel
             //                  *(dd-image.width+1) =
-            *(cd-pp+3+1) = ((int)*(cd+3+1) + (int)*(cd-pp+1) + (int)*(cd-pp+6+1) + (int)*(cd-pp2+3+1)) >> 2;
+            *(rgb_pixel-rgb_line_step+3+1) = ((int)*(rgb_pixel+3+1) + (int)*(rgb_pixel-rgb_line_step+1) + (int)*(rgb_pixel-rgb_line_step+6+1) + (int)*(rgb_pixel-rgb_line_step2+3+1)) >> 2;
           }
         }
         // last pixels
-        s++;
-        *(cd+3+1) = *s++;      // green pixel
-        *(cd+3+2) = *(cd+2);	// interpolated blue pixel
+        bayer_pixel++;
+        *(rgb_pixel+3+1) = *bayer_pixel++;      // green pixel
+        *(rgb_pixel+3+2) = *(rgb_pixel+2);	// interpolated blue pixel
         if (yIdx > 1)
         {
-          *(cd-pp+2) = AVG(*(cd-pp2+2), *(cd+2)); // interpolated blue pixel
-          *(cd-pp+3+2) = AVG(*(cd-pp2+3+2), *(cd+3+2)); // interpolated blue pixel
+          *(rgb_pixel-rgb_line_step+2) = AVG(*(rgb_pixel-rgb_line_step2+2), *(rgb_pixel+2)); // interpolated blue pixel
+          *(rgb_pixel-rgb_line_step+3+2) = AVG(*(rgb_pixel-rgb_line_step2+3+2), *(rgb_pixel+3+2)); // interpolated blue pixel
         }
-        cd += 6;
+        rgb_pixel += 6;
       }
     }
     else if (method == 1)
@@ -835,118 +824,118 @@ void OpenNIDriver::bayer2RGB ( const xn::ImageMetaData& bayer, sensor_msgs::Imag
       int ww;
 
       // do first two lines
-      cd += pp2;
-      //      dd += ll2;
-      s += ll2;
+      rgb_pixel += rgb_line_step2;
+      //      dd += line_step2;
+      bayer_pixel += line_step2;
 
       for (yIdx=0; yIdx<image.height-4; yIdx+=2)
         {
           // GR line
           // do first two pixels
-          cd += 6;
+          rgb_pixel += 6;
           //          dd += 2;
-          s += 2;
+          bayer_pixel += 2;
 
           // do most of line
-          for (xIdx=0; xIdx<image.width-4; xIdx+=2, cd+=6)
+          for (xIdx=0; xIdx<image.width-4; xIdx+=2, rgb_pixel+=6)
             {
               // green pixels
               //              *dd++ =
-              *(cd+1) = *s++;
-              dc = 2*(int)*(s);
-              dh = dc - (int)*(s-2) - (int)*(s+2);
+              *(rgb_pixel+1) = *bayer_pixel++;
+              dc = 2*(int)*(bayer_pixel);
+              dh = dc - (int)*(bayer_pixel-2) - (int)*(bayer_pixel+2);
               if (dh < 0) dh = -dh;
-              dv = dc - (int)*(s-ll2) - (int)*(s+ll2);
+              dv = dc - (int)*(bayer_pixel-line_step2) - (int)*(bayer_pixel+line_step2);
               if (dv < 0) dv = -dv;
               if (dv > dh) // vert is stronger, use horz
                 //*dd++ =
-                    *(cd+3+1) = ((int)*(s-1) + (int)*(s+1))>>1;
+                    *(rgb_pixel+3+1) = ((int)*(bayer_pixel-1) + (int)*(bayer_pixel+1))>>1;
               else	// horz is stronger, use vert
                 //*dd++ =
-                    *(cd+3+1) = ((int)*(s-ll) + (int)*(s+ll))>>1;
+                    *(rgb_pixel+3+1) = ((int)*(bayer_pixel-line_step) + (int)*(bayer_pixel+line_step))>>1;
 
               // color pixels
-              *(cd+3+0) = *s;	// red pixel
+              *(rgb_pixel+3+0) = *bayer_pixel;	// red pixel
 
-              a = (int)*(s) - (int)*(cd+3+1);
-              b = (int)*(s-2) - (int)*(cd-3+1);
-              c = (int)*(s-ll2) - (int)*(cd-pp2+3+1);
-              d = (int)*(s-ll2-2) - (int)*(cd-pp2-3+1);
+              a = (int)*(bayer_pixel) - (int)*(rgb_pixel+3+1);
+              b = (int)*(bayer_pixel-2) - (int)*(rgb_pixel-3+1);
+              c = (int)*(bayer_pixel-line_step2) - (int)*(rgb_pixel-rgb_line_step2+3+1);
+              d = (int)*(bayer_pixel-line_step2-2) - (int)*(rgb_pixel-rgb_line_step2-3+1);
 
-              ww = 2*(int)*(cd+1) + (a + b);
+              ww = 2*(int)*(rgb_pixel+1) + (a + b);
               if (ww < 0) ww = 0;
               if (ww > 511) ww = 511;
-              *(cd+0) = ww>>1;	// interpolated red pixel
+              *(rgb_pixel+0) = ww>>1;	// interpolated red pixel
 
-              ww = 2*(int)*(cd-pp+3+1) + (a + c);
+              ww = 2*(int)*(rgb_pixel-rgb_line_step+3+1) + (a + c);
               if (ww < 0) ww = 0;
               if (ww > 511) ww = 511;
-              *(cd-pp+3+0) = ww>>1; // interpolated red pixel
+              *(rgb_pixel-rgb_line_step+3+0) = ww>>1; // interpolated red pixel
 
-              ww = 4*(int)*(cd-pp+1) + (a + b + c + d);
+              ww = 4*(int)*(rgb_pixel-rgb_line_step+1) + (a + b + c + d);
               if (ww < 0) ww = 0;
               if (ww > 1023) ww = 1023;
-              *(cd-pp+0) = ww>>2; // interpolated red pixel
+              *(rgb_pixel-rgb_line_step+0) = ww>>2; // interpolated red pixel
 
-              s++;
+              bayer_pixel++;
             }
           // last two pixels
-          cd += 6;
+          rgb_pixel += 6;
           //          dd += 2;
-          s += 2;
+          bayer_pixel += 2;
 
           // BG line
           // do first two pixels
-          cd += 6;
+          rgb_pixel += 6;
           //          dd += 2;
-          s += 2;
+          bayer_pixel += 2;
 
           // do most of line
-          for (xIdx=0; xIdx<image.width-4; xIdx+=2, cd+=6)
+          for (xIdx=0; xIdx<image.width-4; xIdx+=2, rgb_pixel+=6)
             {
-              dc = 2*(int)*s;
-              dh = dc - (int)*(s-2) - (int)*(s+2);
+              dc = 2*(int)*bayer_pixel;
+              dh = dc - (int)*(bayer_pixel-2) - (int)*(bayer_pixel+2);
               if (dh < 0) dh = -dh;
-              dv = dc - (int)*(s-ll2) - (int)*(s+ll2);
+              dv = dc - (int)*(bayer_pixel-line_step2) - (int)*(bayer_pixel+line_step2);
               if (dv < 0) dv = -dv;
               if (dh < dv) // vert is stronger, use horz
                 //*dd++ =
-                    *(cd+1) = ((int)*(s-1) + (int)*(s+1))>>1;
+                    *(rgb_pixel+1) = ((int)*(bayer_pixel-1) + (int)*(bayer_pixel+1))>>1;
               else	// horz is stronger, use vert
                 //*dd++ =
-                    *(cd+1) = ((int)*(s-ll) + (int)*(s+ll))>>1;
+                    *(rgb_pixel+1) = ((int)*(bayer_pixel-line_step) + (int)*(bayer_pixel+line_step))>>1;
               //              *dd++ =
-              *(cd+3+1) = *(s+1); // green pixel
+              *(rgb_pixel+3+1) = *(bayer_pixel+1); // green pixel
 
               // color pixels
-              *(cd+3+2) = *s;	// blue pixel
+              *(rgb_pixel+3+2) = *bayer_pixel;	// blue pixel
 
-              a = (int)*(s) - (int)*(cd+3+1);
-              b = (int)*(s-2) - (int)*(cd-3+1);
-              c = (int)*(s-ll2) - (int)*(cd-pp2+3+1);
-              d = (int)*(s-ll2-2) - (int)*(cd-pp2-3+1);
+              a = (int)*(bayer_pixel) - (int)*(rgb_pixel+3+1);
+              b = (int)*(bayer_pixel-2) - (int)*(rgb_pixel-3+1);
+              c = (int)*(bayer_pixel-line_step2) - (int)*(rgb_pixel-rgb_line_step2+3+1);
+              d = (int)*(bayer_pixel-line_step2-2) - (int)*(rgb_pixel-rgb_line_step2-3+1);
 
-              ww = 2*(int)*(cd+1) + (a + b);
+              ww = 2*(int)*(rgb_pixel+1) + (a + b);
               if (ww < 0) ww = 0;
               if (ww > 511) ww = 511;
-              *(cd+2) = ww>>1;	// interpolated blue pixel
+              *(rgb_pixel+2) = ww>>1;	// interpolated blue pixel
 
-              ww = 2*(int)*(cd-pp+3+1) + (a + c);
+              ww = 2*(int)*(rgb_pixel-rgb_line_step+3+1) + (a + c);
               if (ww < 0) ww = 0;
               if (ww > 511) ww = 511;
-              *(cd-pp+3+2) = ww>>1; // interpolated blue pixel
+              *(rgb_pixel-rgb_line_step+3+2) = ww>>1; // interpolated blue pixel
 
-              ww = 4*(int)*(cd-pp+1) + (a + b + c + d);
+              ww = 4*(int)*(rgb_pixel-rgb_line_step+1) + (a + b + c + d);
               if (ww < 0) ww = 0;
               if (ww > 1023) ww = 1023;
-              *(cd-pp+2) = ww>>2; // interpolated blue pixel
+              *(rgb_pixel-rgb_line_step+2) = ww>>2; // interpolated blue pixel
 
-              s+=2;
+              bayer_pixel+=2;
             }
           // last two pixels
-          cd += 6;
+          rgb_pixel += 6;
           //          dd += 2;
-          s += 2;
+          bayer_pixel += 2;
         }
     }
     else
@@ -957,12 +946,12 @@ void OpenNIDriver::bayer2RGB ( const xn::ImageMetaData& bayer, sensor_msgs::Imag
   else
   {
     // get each or each 2nd pixel group to find rgb values!
-    unsigned bayerXStep = bayer.XRes() / image.width;
-    unsigned bayerYSkip = (bayer.YRes() / image.height - 1) * bayer.XRes();
+    register unsigned bayerXStep = bayer.XRes() / image.width;
+    register unsigned bayerYSkip = (bayer.YRes() / image.height - 1) * bayer.XRes();
 
     // Downsampling and debayering at once
-    const XnUInt8* bayer_buffer = bayer.Data();
-    unsigned char* rgb_buffer = (unsigned char*)&image.data[0];
+    register const XnUInt8* bayer_buffer = bayer.Data();
+    register unsigned char* rgb_buffer = (unsigned char*)&image.data[0];
 
     for( register unsigned yIdx = 0; yIdx < image.height; ++yIdx, bayer_buffer += bayerYSkip ) // skip a line
     {
@@ -978,31 +967,196 @@ void OpenNIDriver::bayer2RGB ( const xn::ImageMetaData& bayer, sensor_msgs::Imag
 
 void OpenNIDriver::bayer2Gray ( const xn::ImageMetaData& bayer, sensor_msgs::Image& image, int method )
 {
-  // fast method -> simply takes each or each 2nd pixel-group to get gray values out
-  unsigned bayer_step = bayer.XRes() / image.width;
-  unsigned bayer_skip = (bayer.YRes() / image.height - 1) * bayer.XRes();
-  const XnUInt8* bayer_buffer = bayer.Data();
-  unsigned char* gray_buffer = (unsigned char*)&image.data[0];
-
-  for( register unsigned yIdx = 0; yIdx < bayer.YRes()-1; yIdx += bayer_step, bayer_buffer += bayer_skip ) // skip a line
+  if (bayer.XRes() == image.width && bayer.YRes() == image.height)
   {
-    for( register unsigned xIdx = 0; xIdx < bayer.XRes()-1; xIdx += bayer_step, ++gray_buffer, bayer_buffer += bayer_step )
-    {
-      *gray_buffer = AVG4( bayer_buffer[ bayer.XRes() ], bayer_buffer[0], bayer_buffer[ bayer.XRes() + 1], bayer_buffer[ 1 ]);
-    }
-    if (bayer_step == 1)
-    {
-      // calculate last pixel in row = simply the previous pixel!
-      *gray_buffer = gray_buffer[-1];
-      bayer_buffer += bayer_step;
-      ++gray_buffer;
-    }
-  }
+    unsigned char* gray_pixel = (unsigned char *)&image.data[0];
+    const XnUInt8 *bayer_pixel = bayer.Data();
+    int line_skip = image.width;
+    int line_skip2 = image.width << 1;
 
-  if (bayer_skip == 0)
-  {
-    // simply copy previous row as last one!
-    memcpy( gray_buffer, gray_buffer-image.width, image.width );
+    if (method == 0)
+    {
+      for (register unsigned yIdx = 0; yIdx < image.height; yIdx += 2)
+      {
+        // red line
+        for (register unsigned xIdx = 0; xIdx < image.width-2; xIdx += 2, gray_pixel += 2, bayer_pixel += 2)
+        {
+          gray_pixel[0] = bayer_pixel[0];            // green pixel
+          gray_pixel[1] = AVG(gray_pixel[0], bayer_pixel[2]); // interpolated green pixel
+        }
+        gray_pixel[0] = gray_pixel[1] = bayer_pixel[0];
+        gray_pixel += 2;
+        bayer_pixel += 2;
+
+
+        // blue line
+        gray_pixel[0] = gray_pixel[1] = bayer_pixel[1];
+        gray_pixel += 2;
+        bayer_pixel += 2;
+        for (register unsigned xIdx = 2; xIdx < image.width; xIdx += 2, gray_pixel += 2, bayer_pixel += 2)
+        {
+          gray_pixel[1] = bayer_pixel[1];        // green pixel
+          gray_pixel[0] = AVG(gray_pixel[1], gray_pixel[-1]); // interpolated green pixel
+        }
+      }
+
+    }
+    else // best
+    {
+      int dc, dv, dh;
+
+      // do first two lines
+
+      // GRGRGR line
+      for (register unsigned xIdx = 0; xIdx < image.width - 2; xIdx += 2, gray_pixel +=2, bayer_pixel += 2)
+      {
+        // for first line we have GRGRGR -> interpolate between left and right gren value
+        gray_pixel[0] = bayer_pixel[0];
+        gray_pixel[1] = ((int)bayer_pixel[0] + (int)bayer_pixel[2]) >> 1;
+      }
+      // last two pixels of the GRGR line
+      gray_pixel[0] = gray_pixel[1] = bayer_pixel[0];
+      
+      gray_pixel += 4;
+      bayer_pixel += 4;
+      // first two pixels of BGBGBG line
+      gray_pixel[-2] = gray_pixel[-1] = bayer_pixel[-1];
+      for (register unsigned xIdx = 2; xIdx < image.width; xIdx += 2, gray_pixel +=2, bayer_pixel += 2)
+      {
+        // for first line we have GRGRGR -> interpolate between left and right gren value
+        gray_pixel[1] = bayer_pixel[1];
+        gray_pixel[0] = ((int)bayer_pixel[-1] + (int)bayer_pixel[1]) >> 1;
+      }
+
+      //gray_pixel += line_skip2;
+      //bayer_pixel += line_skip2;
+
+      for (register unsigned yIdx = 0; yIdx < image.height - 4; yIdx += 2)
+      {
+        // GR line
+        // do first two pixels
+        gray_pixel[0] = bayer_pixel[0];
+        // simply use vertical interpolation
+        gray_pixel[1] = ((int)bayer_pixel[1-line_skip] + (int)bayer_pixel[1+line_skip]) >> 1;
+        gray_pixel += 2;
+        bayer_pixel += 2;
+
+        // do most of line
+        for (register unsigned xIdx = 0; xIdx < image.width - 4; xIdx += 2, gray_pixel +=2, bayer_pixel += 2)
+        {
+          // green pixel
+          gray_pixel[0] = bayer_pixel[0];
+
+          // red pixel
+          // center
+          dc = ((int)bayer_pixel[1]) << 1;
+          // horizontal gradient on red pixels
+          dh = dc - ((int)bayer_pixel[-1])- (int)bayer_pixel[3];
+          if (dh < 0) dh = -dh;
+          // vertical gradient on red pixels
+          dv = dc - (int)bayer_pixel[1-line_skip2] - (int)bayer_pixel[1+line_skip2];
+          if (dv < 0) dv = -dv;
+          if (dv > dh) // vert is stronger, use horz
+            gray_pixel[1] = ((int)bayer_pixel[0] + (int)bayer_pixel[2]) >> 1;
+          else  // horz is stronger, use vert
+            gray_pixel[1] = ((int)bayer_pixel[1-line_skip] + (int)bayer_pixel[1+line_skip]) >> 1;
+        }
+        gray_pixel[0] = bayer_pixel[0];
+        // use vertical interpolation, since horizontal is not available here
+        gray_pixel[1] = ((int)bayer_pixel[1-line_skip] + (int)bayer_pixel[1+line_skip]) >> 1;
+
+        // last two pixels
+        gray_pixel += 2;
+        bayer_pixel += 2;
+
+        // BG line
+        // do first two pixels
+
+        gray_pixel[1] = bayer_pixel[1];
+        // simply use vertical interpolation
+        gray_pixel[0] = ((int)bayer_pixel[line_skip] + (int)bayer_pixel[line_skip]) >> 1;
+        gray_pixel += 2;
+        bayer_pixel += 2;
+
+        // do most of line
+        for (register unsigned xIdx = 0; xIdx < image.width - 4; xIdx += 2, bayer_pixel += 2, gray_pixel += 2)
+        {
+          dc = ((int)bayer_pixel[0]) << 1;
+
+          dh = dc - (int)bayer_pixel[-2] - (int)bayer_pixel[2];
+          if (dh < 0) dh = -dh;
+
+          dv = dc - (int)bayer_pixel[-line_skip2] - (int)bayer_pixel[line_skip2];
+          if (dv < 0) dv = -dv;
+          if (dh < dv) // vert is stronger, use horz
+            gray_pixel[0] = ((int)bayer_pixel[-1] + (int)bayer_pixel[1]) >> 1;
+          else  // horz is stronger, use vert
+            gray_pixel[0] = ((int)bayer_pixel[-line_skip] + (int)bayer_pixel[line_skip]) >> 1;
+          gray_pixel[1] = bayer_pixel[1]; // green pixel
+
+        }
+
+        // last two pixels
+        gray_pixel[1] = bayer_pixel[1];
+        // simply use vertical interpolation
+        gray_pixel[0] = ((int)bayer_pixel[line_skip] + (int)bayer_pixel[line_skip]) >> 1;
+        
+        gray_pixel += 2;
+        bayer_pixel += 2;
+      }
+
+      // do last two lines
+
+      // GRGRGR line
+      for (register unsigned xIdx = 0; xIdx < image.width - 2; xIdx += 2, gray_pixel +=2, bayer_pixel += 2)
+      {
+        // for first line we have GRGRGR -> interpolate between left and right gren value
+        gray_pixel[0] = bayer_pixel[0];
+        gray_pixel[1] = ((int)bayer_pixel[0] + (int)bayer_pixel[2]) >> 1;
+      }
+      // last two pixels of the GRGR line
+      gray_pixel[0] = gray_pixel[1] = bayer_pixel[0];
+
+      gray_pixel += 4;
+      bayer_pixel += 4;
+      // first two pixels of BGBGBG line
+      gray_pixel[-2] = gray_pixel[-1] = bayer_pixel[-1];
+      for (register unsigned xIdx = 2; xIdx < image.width; xIdx += 2, gray_pixel +=2, bayer_pixel += 2)
+      {
+        // for first line we have GRGRGR -> interpolate between left and right gren value
+        gray_pixel[1] = bayer_pixel[1];
+        gray_pixel[0] = ((int)bayer_pixel[-1] + (int)bayer_pixel[1]) >> 1;
+      }
+    } // if (method)
   }
+  else // downsampling
+  {
+
+    // fast method -> simply takes each or each 2nd pixel-group to get gray values out
+    register unsigned bayer_step = bayer.XRes() / image.width;
+    register unsigned bayer_skip = (bayer.YRes() / image.height - 1) * bayer.XRes();
+    register const XnUInt8* bayer_buffer = bayer.Data();
+    register unsigned char* gray_buffer = (unsigned char*)&image.data[0];
+    if (method==0)
+    {
+      for( register unsigned yIdx = 0; yIdx < bayer.YRes(); yIdx += bayer_step, bayer_buffer += bayer_skip ) // skip a line
+      {
+        for( register unsigned xIdx = 0; xIdx < bayer.XRes(); xIdx += bayer_step, ++gray_buffer, bayer_buffer += bayer_step )
+        {
+          *gray_buffer = AVG4( bayer_buffer[ bayer.XRes() ], bayer_buffer[0], bayer_buffer[ bayer.XRes() + 1], bayer_buffer[ 1 ]);
+        }
+      }
+    }
+    else
+    {
+      for( register unsigned yIdx = 0; yIdx < bayer.YRes(); yIdx += bayer_step, bayer_buffer += bayer_skip ) // skip a line
+      {
+        for( register unsigned xIdx = 0; xIdx < bayer.XRes(); xIdx += bayer_step, ++gray_buffer, bayer_buffer += bayer_step )
+        {
+          *gray_buffer = AVG( bayer_buffer[0], bayer_buffer[ bayer.XRes() + 1]);
+        }
+      }
+    }
+  } // downsampling
 }
 } // namespace openni_camera
