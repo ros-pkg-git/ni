@@ -94,8 +94,10 @@ OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   
   // Set the frame IDs. The optical frames are all Z-forward.
   std::string openni_depth_frame, openni_RGB_frame;
-  param_nh.param ("openni_depth_optical_frame", openni_depth_frame, std::string ("/openni_depth_optical_frame"));
-  param_nh.param ("openni_rgb_optical_frame", openni_RGB_frame, std::string ("/openni_rgb_optical_frame"));
+  param_nh.param ("openni_depth_optical_frame", openni_depth_frame,
+                  std::string ("/openni_depth_optical_frame"));
+  param_nh.param ("openni_rgb_optical_frame", openni_RGB_frame,
+                  std::string ("/openni_rgb_optical_frame"));
   
   cloud2_.header.frame_id = openni_depth_frame;  
   disp_image_.header.frame_id = openni_depth_frame;
@@ -112,6 +114,13 @@ OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   pub_depth_image_ = it.advertise ("depth/image_raw", 15);
   pub_disparity_ = comm_nh_.advertise<stereo_msgs::DisparityImage>("depth/disparity", 15 );
   pub_depth_points2_ = comm_nh.advertise<sensor_msgs::PointCloud2>("depth/points2", 15);
+
+  SyncPolicy sync_policy(4); // queue size
+  /// @todo Set inter-message lower bound, age penalty, max interval to lower latency
+  // Connect no inputs, we'll add messages manually
+  depth_rgb_sync_.reset( new Synchronizer(sync_policy) );
+  depth_rgb_sync_->registerCallback(boost::bind(&OpenNIDriver::publishRegisteredPointCloud,
+                                                this, _1, _2));
 
   //cout << "OpenNIDriver::OpenNIDriver...end" << endl;
 }
@@ -151,6 +160,41 @@ bool OpenNIDriver::isDepthStreamRequired() const
 bool 
 OpenNIDriver::spin ()
 {
+  /// @Pat: I've disabled this code from publish() now for simplicity. I suspect that
+  /// with IsNewDataAvailable (before updating) we can get more accurate timestamp offsets.
+  /*
+  static bool first_publish = true;
+  static ros::Duration time_offset;
+  static XnUInt64 last_image_timestamp = 0;
+  static XnUInt64 last_depth_timestamp = 0;
+
+  if (first_publish)
+  {
+    last_image_timestamp = image_generator_.GetTimestamp ();
+    last_depth_timestamp = depth_generator_.GetTimestamp ();
+    ros::Time ros_time = ros::Time::now ();
+
+    XnUInt64 first_image_timestamp = min( last_image_timestamp, last_depth_timestamp );
+
+    ros::Time current (first_image_timestamp / 1000000, (first_image_timestamp % 1000000) * 1000);
+
+    time_offset = ros_time - current;
+
+    first_publish = false;
+    return; // dont publish right now!
+  }
+
+  XnUInt64 image_timestamp = image_generator_.GetTimestamp ();
+  XnUInt64 depth_timestamp = depth_generator_.GetTimestamp ();
+
+  if (image_timestamp != last_image_timestamp)
+  {
+    ros::Time time (image_timestamp / 1000000, (image_timestamp % 1000000) * 1000);
+    time += time_offset;
+    // etc.
+  }
+  */
+  
   XnStatus status;
   //cout << "OpenNIDriver::spin" << endl;
   ros::Duration r (0.01);
@@ -234,17 +278,7 @@ OpenNIDriver::spin ()
       continue;
     }
 
-#if 0
-    // Wait for new data to be available
-    XnStatus status = context_.WaitAnyUpdateAll ( );
-    if (status != XN_STATUS_OK)
-    {
-      ROS_ERROR ("[OpenNIDriver::spin] Error receiving data: %s", xnGetStatusString (status));
-      continue;
-    }
-
-    publish ();
-#endif
+    // See if new data is available
     if (depth_generator_.IsNewDataAvailable())
     {
       /// @todo Maybe take ROS time here and have more accurate offset
@@ -253,10 +287,10 @@ OpenNIDriver::spin ()
     }
     if (image_generator_.IsNewDataAvailable())
     {
-      image_generator_.WaitAndUpdateData();
+      image_generator_.WaitAndUpdateData(); // non-blocking
       processRgb();
     }
-    r.sleep(); // Should only happen if no new data
+    r.sleep(); /// @todo should only happen if no new data
 
     // Spin for ROS message processing
     ros::spinOnce ();
@@ -299,14 +333,9 @@ void OpenNIDriver::processDepth ()
     cloud2_.header.stamp = time;
 
     if (config_.point_cloud_type == OpenNI_XYZRGB)
-    {
-      /// @todo Add depth image to synchronizer
-      ROS_WARN("Not doing registered point cloud yet");
-    }
+      depth_rgb_sync_->add<0>(depth_ptr);
     else
-    {
       publishUnregisteredPointCloud(depth_md);
-    }
   }
 }
 
@@ -323,13 +352,16 @@ void OpenNIDriver::processRgb ()
     rgb_image_.header.stamp = rgb_info_.header.stamp = time;
 
     bayer2RGB( image_md, rgb_image_, config_.Bayer2RGB );
-    
+
+    sensor_msgs::ImageConstPtr rgb_ptr = boost::make_shared<const sensor_msgs::Image> (rgb_image_);
     if (pub_rgb_.getNumSubscribers() > 0)
     {
-      pub_rgb_.publish (boost::make_shared<const sensor_msgs::Image> (rgb_image_),
+      pub_rgb_.publish (rgb_ptr,
                         boost::make_shared<const sensor_msgs::CameraInfo> (rgb_info_));
     }
-    /// @todo Add to synchronizer for point cloud
+
+    if (pub_depth_points2_.getNumSubscribers() > 0 && config_.point_cloud_type == OpenNI_XYZRGB)
+      depth_rgb_sync_->add<1>(rgb_ptr);
   }
 
   if (isGrayRequired())
@@ -416,8 +448,8 @@ void OpenNIDriver::publishUnregisteredPointCloud ( const xn::DepthMetaData& dept
   pub_depth_points2_.publish (boost::make_shared<const sensor_msgs::PointCloud2> (cloud2_));
 }
 
-void OpenNIDriver::publishRegisteredPointCloud ( const sensor_msgs::ImageConstPtr& rgb_msg,
-                                                 const sensor_msgs::ImageConstPtr& depth_msg )
+void OpenNIDriver::publishRegisteredPointCloud ( const sensor_msgs::ImageConstPtr& depth_msg,
+                                                 const sensor_msgs::ImageConstPtr& rgb_msg )
 {
   float bad_point = std::numeric_limits<float>::quiet_NaN ();
   int depth_idx = 0;
@@ -479,198 +511,6 @@ void OpenNIDriver::publishRegisteredPointCloud ( const sensor_msgs::ImageConstPt
 
   /// @todo RGB frame here
   pub_depth_points2_.publish (boost::make_shared<const sensor_msgs::PointCloud2> (cloud2_));
-}
-
-/** \brief Take care of putting data in the correct ROS message formats. */
-void 
-OpenNIDriver::publish ()
-{
-  static bool first_publish = true;
-  static ros::Duration time_offset;
-  static XnUInt64 last_image_timestamp = 0;
-  static XnUInt64 last_depth_timestamp = 0;
-
-  ROS_FATAL("In OpenNIDriver::publish!");
-  if (first_publish)
-  {
-    last_image_timestamp = image_generator_.GetTimestamp ();
-    last_depth_timestamp = depth_generator_.GetTimestamp ();
-    ros::Time ros_time = ros::Time::now ();
-
-    XnUInt64 first_image_timestamp = min( last_image_timestamp, last_depth_timestamp );
-
-    ros::Time current (first_image_timestamp / 1000000, (first_image_timestamp % 1000000) * 1000);
-
-    time_offset = ros_time - current;
-
-    first_publish = false;
-    return; // dont publish right now!
-  }
-
-  XnUInt64 image_timestamp = image_generator_.GetTimestamp ();
-  XnUInt64 depth_timestamp = depth_generator_.GetTimestamp ();
-
-  if (image_timestamp != last_image_timestamp)
-  {
-    ros::Time time (image_timestamp / 1000000, (image_timestamp % 1000000) * 1000);
-    time += time_offset;
-    xn::ImageMetaData image_md;
-    image_generator_.GetMetaData( image_md );
-
-    if (isRGBRequired())
-    {
-      rgb_image_.header.stamp = rgb_info_.header.stamp = time;
-      rgb_image_.header.seq = image_generator_.GetFrameID ();
-
-      bayer2RGB( image_md, rgb_image_, config_.Bayer2RGB );
-    }
-
-    if (isGrayRequired())
-    {
-      gray_image_.header.stamp = rgb_info_.header.stamp = time;
-      gray_image_.header.seq = image_generator_.GetFrameID ();
-
-      bayer2Gray( image_md, gray_image_, config_.Bayer2RGB );
-    }
-
-    // publish is required!
-    if (pub_rgb_.getNumSubscribers() > 0)
-    {
-      pub_rgb_.publish (boost::make_shared<const sensor_msgs::Image> (rgb_image_),
-                      boost::make_shared<const sensor_msgs::CameraInfo> (rgb_info_));
-    }
-
-    if (pub_gray_.getNumSubscribers() > 0)
-    {
-      pub_gray_.publish (boost::make_shared<const sensor_msgs::Image> (gray_image_),
-                         boost::make_shared<const sensor_msgs::CameraInfo> (rgb_info_));
-    }
-    last_image_timestamp = image_timestamp;
-  }
-
-  if (depth_timestamp != last_depth_timestamp)
-  {
-    ros::Time time (depth_timestamp / 1000000, (depth_timestamp % 1000000) * 1000);
-    time += time_offset;
-
-    xn::DepthMetaData depth_md;
-    depth_generator_.GetMetaData( depth_md );
-
-    if (pub_depth_points2_.getNumSubscribers() > 0 )
-    {
-      cloud2_.header.stamp = time;
-      cloud2_.header.seq = std::max (image_generator_.GetFrameID (), depth_generator_.GetFrameID ());
-
-      float bad_point = std::numeric_limits<float>::quiet_NaN ();
-      int depth_idx = 0;
-
-
-      float* pt_data = reinterpret_cast<float*>(&cloud2_.data[0]);
-      float constant = pixel_size_ * 0.001 / F_;
-
-      unsigned depthStep = depth_md.XRes () / cloud2_.width;
-      unsigned depthSkip = (depth_md.YRes () / cloud2_.height - 1) * depth_md.XRes ();
-
-      int centerX = cloud2_.width >> 1;
-      int centerY = cloud2_.height >> 1;
-      constant *= depthStep;
-
-      if(config_.point_cloud_type == OpenNI_XYZRGB)
-      {
-        unsigned char* rgb_buffer = (unsigned char*)&rgb_image_.data[0];
-        RGBValue color;
-        color.Alpha = 0;
-
-        int color_idx = 0;
-
-        unsigned colorStep = 3 * rgb_image_.width / cloud2_.width;
-        unsigned colorSkip = 3 * (rgb_image_.height / cloud2_.height - 1) * rgb_image_.width;
-
-        for (register int v = 0; v < (int)cloud2_.height; ++v, depth_idx += depthSkip, color_idx += colorSkip)
-        {
-          for (register int u = 0; u < (int)cloud2_.width; ++u, depth_idx += depthStep, pt_data += cloud2_.fields.size(), color_idx += colorStep)
-          {
-            // Check for invalid measurements
-            if (depth_md[depth_idx] == 0 || depth_md[depth_idx] == no_sample_value_ || depth_md[depth_idx] == shadow_value_)
-            {
-              // not valid
-              pt_data[0] = bad_point;
-              pt_data[1] = bad_point;
-              pt_data[2] = bad_point;
-              pt_data[3] = bad_point;
-              continue;
-            }
-
-            // Fill in XYZ
-            pt_data[0] = (u - centerX) * depth_md[depth_idx] * constant;
-            pt_data[1] = (v - centerY) * depth_md[depth_idx] * constant;
-            pt_data[2] = depth_md[depth_idx] * 0.001;
-
-            // Fill in color
-            color.Red   = rgb_buffer[color_idx];
-            color.Green = rgb_buffer[color_idx + 1];
-            color.Blue  = rgb_buffer[color_idx + 2];
-            pt_data[3] = color.float_value;
-          }
-        }
-      }
-      else // without RGB
-      {
-        for (register int v = 0; v < (int)cloud2_.height; ++v, depth_idx += depthSkip)
-        {
-          for (register int u = 0; u < (int)cloud2_.width; ++u, depth_idx += depthStep, pt_data += cloud2_.fields.size())
-          {
-            // Check for invalid measurements
-            if (depth_md[depth_idx] == 0 || depth_md[depth_idx] == no_sample_value_ || depth_md[depth_idx] == shadow_value_)
-            {
-              // not valid
-              pt_data[0] = bad_point;
-              pt_data[1] = bad_point;
-              pt_data[2] = bad_point;
-              continue;
-            }
-
-            // Fill in XYZ
-            pt_data[0] = (u - centerX) * depth_md[depth_idx] * constant;
-            pt_data[1] = (v - centerY) * depth_md[depth_idx] * constant;
-            pt_data[2] = depth_md[depth_idx] * 0.001;
-          }
-        }
-      }
-
-      pub_depth_points2_.publish (boost::make_shared<const sensor_msgs::PointCloud2> (cloud2_));
-    }
-
-    if (pub_disparity_.getNumSubscribers () > 0)
-    {
-      disp_image_.header.stamp = time;
-      disp_image_.header.seq = depth_generator_.GetFrameID ();
-
-      unsigned xStep = 640 / disp_image_.image.width;
-      unsigned ySkip = (480 / disp_image_.image.height - 1) * 640;
-
-      // Fill in the depth image data
-      // iterate over all elements and fill disparity matrix: disp[x,y] = f * b / z_distance[x,y];
-      float constant = focal_length_ * baseline_ * 1000.0;
-      float* pixel = reinterpret_cast<float*>(&disp_image_.image.data[0]);
-      unsigned depthIdx = 0;
-
-      for (register unsigned yIdx = 0; yIdx < disp_image_.image.height; ++yIdx, depthIdx += ySkip )
-      {
-        for (register unsigned xIdx = 0; xIdx < disp_image_.image.width; ++xIdx, depthIdx += xStep, ++pixel)
-        {
-          if (depth_md[depthIdx] == 0 || depth_md[depthIdx] == no_sample_value_ || depth_md[depthIdx] == shadow_value_)
-            *pixel = 0.0;
-          else
-            *pixel = constant / (double)depth_md[depthIdx];
-        }
-      }
-
-      // Publish disparity Image
-      pub_disparity_.publish ( disp_image_ );
-    }
-    last_depth_timestamp = depth_timestamp;
-  }
 }
 
 void OpenNIDriver::configCb (Config &config, uint32_t level)

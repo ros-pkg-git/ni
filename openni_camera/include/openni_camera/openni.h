@@ -52,8 +52,8 @@
 #include <stereo_msgs/DisparityImage.h>
 
 #include <ros/ros.h>
-#include <ros/package.h>
-#include <camera_info_manager/camera_info_manager.h>
+#include <message_filters/synchronizer.h>
+#include <message_filters/sync_policies/approximate_time.h>
 #include <image_transport/image_transport.h>
 #include <dynamic_reconfigure/server.h>
 #include <openni_camera/OpenNIConfig.h>
@@ -92,12 +92,10 @@ namespace openni_camera
       /** \brief Process unregistered depth data into point cloud message and publish. */
       void publishUnregisteredPointCloud ( const xn::DepthMetaData& depth_md );
 
-      void publishRegisteredPointCloud ( const sensor_msgs::ImageConstPtr& rgb_msg,
-                                         const sensor_msgs::ImageConstPtr& depth_msg );
+      /** \brief Process synchronized depth and color images into XYZRGB point cloud and publish. */
+      void publishRegisteredPointCloud ( const sensor_msgs::ImageConstPtr& depth_msg,
+                                         const sensor_msgs::ImageConstPtr& rgb_msg );
     
-      /** \brief Send the data over the network. */
-      void publish ();
-      
       /** \brief An OpenNI context object. */
       xn::Context context_;
       /** \brief Depth generator object. */
@@ -123,6 +121,11 @@ namespace openni_camera
       image_transport::Publisher pub_depth_image_;
       ros::Publisher pub_disparity_;
       ros::Publisher pub_depth_points2_;
+
+      /** \brief Approximate synchronization for XYZRGB point clouds. */
+      typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, sensor_msgs::Image> SyncPolicy;
+      typedef message_filters::Synchronizer<SyncPolicy> Synchronizer;
+      boost::shared_ptr<Synchronizer> depth_rgb_sync_;
 
       /** \brief Dynamic reconfigure. */
       typedef openni_camera::OpenNIConfig Config;
