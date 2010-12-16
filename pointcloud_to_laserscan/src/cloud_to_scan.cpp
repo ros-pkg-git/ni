@@ -44,7 +44,7 @@ class CloudToScan : public nodelet::Nodelet
 {
 public:
   //Constructor
-  CloudToScan(): min_height_(0.0), max_height_(0.25), output_frame_id_("/openi_depth_frame")
+  CloudToScan(): min_height_(0.10), max_height_(0.15), u_min_(100), u_max_(150), output_frame_id_("/openi_depth_frame")
   {
   };
 
@@ -56,6 +56,10 @@ private:
     
     private_nh.getParam("min_height", min_height_);
     private_nh.getParam("max_height", max_height_);
+
+    private_nh.getParam("row_min", u_min_);
+    private_nh.getParam("row_max", u_max_);
+
     private_nh.getParam("output_frame_id", output_frame_id_);
     pub_ = nh.advertise<sensor_msgs::LaserScan>("scan", 10);
     sub_ = nh.subscribe("cloud", 10, &CloudToScan::callback, this);
@@ -76,29 +80,37 @@ private:
     output->range_min = 0.45;
     output->range_max = 10.0;
     
-
-    for (double i = output->angle_min; i <= output->angle_max; i+= output->angle_increment)
-    {
-      output->ranges.push_back(output->range_max + 1.0);
-    }
+    uint32_t ranges_size = std::ceil((output->angle_max - output->angle_min) / output->angle_increment);
+    output->ranges.assign(ranges_size, output->range_max + 1.0);
 
     pcl::PointCloud<pcl::PointXYZ> cloud;
     pcl::fromROSMsg(*input, cloud);
+    
     for (pcl::PointCloud< pcl::PointXYZ >::const_iterator it = cloud.begin(); it != cloud.end(); ++it)
     {
       const float &x = it->x;
       const float &y = it->y;
       const float &z = it->z;
-
-      if (-y > max_height_ || -y < min_height_)
+    
+    /*    for (uint32_t u = std::max((uint32_t)u_min_, 0U); u < std::min((uint32_t)u_max_, cloud.height - 1); u++)
+      for (uint32_t v = 0; v < cloud.width -1; v++)
       {
-        NODELET_DEBUG("rejected for height %f not in range (%f, %f)\n", x, min_height_, max_height_);
-        continue;
-      }
+        //NODELET_ERROR("%d %d,  %d %d", u, v, cloud.height, cloud.width);
+        pcl::PointXYZ point = cloud.at(v,u); ///WTF Column major?
+        const float &x = point.x;
+        const float &y = point.y;
+        const float &z = point.z;
+    */  
+
       if ( isnan(x) || isnan(y) || isnan(z) )
       {
         NODELET_DEBUG("rejected for nan in point(%f, %f, %f)\n", x, y, z);
         continue;  
+      }
+      if (-y > max_height_ || -y < min_height_)
+      {
+        NODELET_DEBUG("rejected for height %f not in range (%f, %f)\n", x, min_height_, max_height_);
+        continue;
       }
       double angle = -atan2(x, z);
       if (angle < output->angle_min || angle > output->angle_max)
@@ -112,14 +124,15 @@ private:
       if (output->ranges[index] * output->ranges[index] > range_sq)
         output->ranges[index] = sqrt(range_sq);
       
-    }
-    
+      
+      }
     
     pub_.publish(output);
   }
 
 
   double min_height_, max_height_;
+  int32_t u_min_, u_max_;
   std::string output_frame_id_;
 
   ros::Publisher pub_;
