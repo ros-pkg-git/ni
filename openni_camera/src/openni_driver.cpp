@@ -230,7 +230,8 @@ OpenNIDriver::spin ()
       r.sleep();
       continue;
     }
-    
+
+#if 0
     // Wait for new data to be available
     XnStatus status = context_.WaitAnyUpdateAll ( );
     if (status != XN_STATUS_OK)
@@ -240,11 +241,227 @@ OpenNIDriver::spin ()
     }
 
     publish ();
+#endif
+    if (depth_generator_.IsNewDataAvailable())
+    {
+      /// @todo Maybe take ROS time here and have more accurate offset
+      depth_generator_.WaitAndUpdateData(); // non-blocking
+      processDepth();
+    }
+    if (image_generator_.IsNewDataAvailable())
+    {
+      image_generator_.WaitAndUpdateData();
+      processRgb();
+    }
+    r.sleep(); // Should only happen if no new data
 
     // Spin for ROS message processing
     ros::spinOnce ();
   }
   return (true);
+}
+
+void OpenNIDriver::processDepth ()
+{
+  /// @todo Some sort of offset based on the hardware time
+  ros::Time time = ros::Time::now();
+  
+  xn::DepthMetaData depth_md;
+  depth_generator_.GetMetaData( depth_md );
+
+  // Disparity image
+  if (pub_disparity_.getNumSubscribers () > 0)
+  {
+    disp_image_.header.stamp = time;
+    publishDisparity(depth_md);
+  }
+
+  // Point cloud
+  if (pub_depth_points2_.getNumSubscribers() > 0 )
+  {
+    cloud2_.header.stamp = time;
+
+    if (config_.point_cloud_type == OpenNI_XYZRGB)
+    {
+      /// @todo Add depth image to synchronizer
+      ROS_WARN("Not doing registered point cloud yet");
+    }
+    else
+    {
+      publishUnregisteredPointCloud(depth_md);
+    }
+  }
+}
+
+void OpenNIDriver::processRgb ()
+{
+  /// @todo Some sort of offset based on the hardware time
+  ros::Time time = ros::Time::now();
+  
+  xn::ImageMetaData image_md;
+  image_generator_.GetMetaData( image_md );
+
+  if (isRGBRequired())
+  {
+    rgb_image_.header.stamp = rgb_info_.header.stamp = time;
+
+    bayer2RGB( image_md, rgb_image_, config_.Bayer2RGB );
+    
+    if (pub_rgb_.getNumSubscribers() > 0)
+    {
+      pub_rgb_.publish (boost::make_shared<const sensor_msgs::Image> (rgb_image_),
+                        boost::make_shared<const sensor_msgs::CameraInfo> (rgb_info_));
+    }
+    /// @todo Add to synchronizer for point cloud
+  }
+
+  if (isGrayRequired())
+  {
+    gray_image_.header.stamp = rgb_info_.header.stamp = time;
+    gray_image_.header.seq = image_generator_.GetFrameID ();
+
+    bayer2Gray( image_md, gray_image_, config_.Bayer2RGB );
+
+    if (pub_gray_.getNumSubscribers() > 0)
+    {
+      pub_gray_.publish (boost::make_shared<const sensor_msgs::Image> (gray_image_),
+                         boost::make_shared<const sensor_msgs::CameraInfo> (rgb_info_));
+    }
+  }
+}
+
+void OpenNIDriver::publishDisparity ( const xn::DepthMetaData& depth_md )
+{
+  unsigned xStep = 640 / disp_image_.image.width;
+  unsigned ySkip = (480 / disp_image_.image.height - 1) * 640;
+
+  // Fill in the depth image data
+  // iterate over all elements and fill disparity matrix: disp[x,y] = f * b / z_distance[x,y];
+  float constant = focal_length_ * baseline_ * 1000.0;
+  float* pixel = reinterpret_cast<float*>(&disp_image_.image.data[0]);
+  unsigned depthIdx = 0;
+
+  for (unsigned yIdx = 0; yIdx < disp_image_.image.height; ++yIdx, depthIdx += ySkip )
+  {
+    for (unsigned xIdx = 0; xIdx < disp_image_.image.width; ++xIdx, depthIdx += xStep, ++pixel)
+    {
+      if (depth_md[depthIdx] == 0 ||
+          depth_md[depthIdx] == no_sample_value_ ||
+          depth_md[depthIdx] == shadow_value_)
+        *pixel = 0.0;
+      else
+        *pixel = constant / (double)depth_md[depthIdx];
+    }
+  }
+  
+  // Publish disparity Image
+  pub_disparity_.publish ( disp_image_ );
+}
+
+void OpenNIDriver::publishUnregisteredPointCloud ( const xn::DepthMetaData& depth_md )
+{
+  float bad_point = std::numeric_limits<float>::quiet_NaN ();
+  int depth_idx = 0;
+  float* pt_data = reinterpret_cast<float*>(&cloud2_.data[0]);
+  float constant = pixel_size_ * 0.001 / F_;
+
+  unsigned depthStep = depth_md.XRes () / cloud2_.width;
+  unsigned depthSkip = (depth_md.YRes () / cloud2_.height - 1) * depth_md.XRes ();
+
+  int centerX = cloud2_.width >> 1;
+  int centerY = cloud2_.height >> 1;
+  constant *= depthStep;
+
+  for (int v = 0; v < (int)cloud2_.height; ++v, depth_idx += depthSkip)
+  {
+    for (int u = 0; u < (int)cloud2_.width; ++u, depth_idx += depthStep, pt_data += cloud2_.fields.size())
+    {
+      // Check for invalid measurements
+      if (depth_md[depth_idx] == 0 ||
+          depth_md[depth_idx] == no_sample_value_ ||
+          depth_md[depth_idx] == shadow_value_)
+      {
+        // not valid
+        pt_data[0] = bad_point;
+        pt_data[1] = bad_point;
+        pt_data[2] = bad_point;
+        continue;
+      }
+
+      // Fill in XYZ
+      pt_data[0] = (u - centerX) * depth_md[depth_idx] * constant;
+      pt_data[1] = (v - centerY) * depth_md[depth_idx] * constant;
+      pt_data[2] = depth_md[depth_idx] * 0.001;
+    }
+  }
+
+  /// @todo Depth frame here
+  pub_depth_points2_.publish (boost::make_shared<const sensor_msgs::PointCloud2> (cloud2_));
+}
+
+void OpenNIDriver::publishRegisteredPointCloud ( const sensor_msgs::ImageConstPtr& rgb_msg,
+                                                 const sensor_msgs::ImageConstPtr& depth_msg )
+{
+  float bad_point = std::numeric_limits<float>::quiet_NaN ();
+  int depth_idx = 0;
+  float* pt_data = reinterpret_cast<float*>(&cloud2_.data[0]);
+  float constant = pixel_size_ * 0.001 / F_;
+
+  //unsigned depthStep = depth_md.XRes () / cloud2_.width;
+  //unsigned depthSkip = (depth_md.YRes () / cloud2_.height - 1) * depth_md.XRes ();
+  unsigned depthStep = depth_msg->width / cloud2_.width;
+  unsigned depthSkip = (depth_msg->height / cloud2_.height - 1) * depth_msg->width;
+
+  int centerX = cloud2_.width >> 1;
+  int centerY = cloud2_.height >> 1;
+  constant *= depthStep;
+
+  unsigned char* rgb_buffer = (unsigned char*)&rgb_image_.data[0];
+  RGBValue color;
+  color.Alpha = 0;
+
+  int color_idx = 0;
+  unsigned colorStep = 3 * rgb_image_.width / cloud2_.width;
+  unsigned colorSkip = 3 * (rgb_image_.height / cloud2_.height - 1) * rgb_image_.width;
+
+  /// @todo Right now we always copy the raw depth data into a sensor_msgs/Image. In principle this
+  /// isn't completely avoidable, as the synchronizer may wait for the next depth image before choosing
+  /// the old data, which is overwritten by that point. In practice though we should optimize to avoid
+  /// this almost always.
+  const uint16_t* depth_md = reinterpret_cast<const uint16_t*>(&depth_msg->data[0]);
+
+  for (int v = 0; v < (int)cloud2_.height; ++v, depth_idx += depthSkip, color_idx += colorSkip)
+  {
+    for (int u = 0; u < (int)cloud2_.width; ++u, depth_idx += depthStep, pt_data += cloud2_.fields.size(), color_idx += colorStep)
+    {
+      // Check for invalid measurements
+      if (depth_md[depth_idx] == 0 ||
+          depth_md[depth_idx] == no_sample_value_ ||
+          depth_md[depth_idx] == shadow_value_)
+      {
+        // not valid
+        pt_data[0] = bad_point;
+        pt_data[1] = bad_point;
+        pt_data[2] = bad_point;
+        pt_data[3] = bad_point;
+        continue;
+      }
+
+      // Fill in XYZ
+      pt_data[0] = (u - centerX) * depth_md[depth_idx] * constant;
+      pt_data[1] = (v - centerY) * depth_md[depth_idx] * constant;
+      pt_data[2] = depth_md[depth_idx] * 0.001;
+
+      // Fill in color
+      color.Red   = rgb_buffer[color_idx];
+      color.Green = rgb_buffer[color_idx + 1];
+      color.Blue  = rgb_buffer[color_idx + 2];
+      pt_data[3] = color.float_value;
+    }
+  }
+
+  /// @todo RGB frame here
+  pub_depth_points2_.publish (boost::make_shared<const sensor_msgs::PointCloud2> (cloud2_));
 }
 
 /** \brief Take care of putting data in the correct ROS message formats. */
@@ -256,6 +473,7 @@ OpenNIDriver::publish ()
   static XnUInt64 last_image_timestamp = 0;
   static XnUInt64 last_depth_timestamp = 0;
 
+  ROS_FATAL("In OpenNIDriver::publish!");
   if (first_publish)
   {
     last_image_timestamp = image_generator_.GetTimestamp ();
@@ -551,7 +769,7 @@ bool OpenNIDriver::updateDeviceSettings()
   cloud2_.data.resize (cloud2_.row_step   * cloud2_.height);
   cloud2_.is_dense = false;
 
-  
+  /// @todo Inline function to turn resolution enum into height/width
   // Assemble the depth image data
   switch( config_.disparity_resolution )
   {
@@ -652,7 +870,7 @@ bool OpenNIDriver::updateDeviceSettings()
   // got baseline update disparity image
   disp_image_.T = baseline_;
   disp_image_.f  = focal_length_;
-  /// @todo Make sure values below are accurate
+  /// @todo Compute these values from DepthGenerator::GetDeviceMaxDepth() and the like
   disp_image_.min_disparity = 0.0;
   disp_image_.max_disparity = disp_image_.T * disp_image_.f / 0.3;
   disp_image_.delta_d = 0.125;

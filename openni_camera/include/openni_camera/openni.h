@@ -80,6 +80,21 @@ namespace openni_camera
       bool spin ();
 
     protected:
+      /** \brief Process raw depth data into ROS messages. */
+      void processDepth ();
+
+      /** \brief Process raw RGB data into ROS messages. */
+      void processRgb ();
+
+      /** \brief Process unregistered depth data into DisparityImage message and publish. */
+      void publishDisparity ( const xn::DepthMetaData& depth_md );
+
+      /** \brief Process unregistered depth data into point cloud message and publish. */
+      void publishUnregisteredPointCloud ( const xn::DepthMetaData& depth_md );
+
+      void publishRegisteredPointCloud ( const sensor_msgs::ImageConstPtr& rgb_msg,
+                                         const sensor_msgs::ImageConstPtr& depth_msg );
+    
       /** \brief Send the data over the network. */
       void publish ();
       
