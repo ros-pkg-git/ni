@@ -62,6 +62,7 @@
 #include <XnCppWrapper.h>
 
 #define AVG(a,b) (((int)(a) + (int)(b)) >> 1)
+#define AVG3(a,b,c) (((int)(a) + (int)(b) + (int)(c)) / 3)
 #define AVG4(a,b,c,d) (((int)(a) + (int)(b) + (int)(c) + (int)(d)) >> 2)
 
 namespace openni_camera
