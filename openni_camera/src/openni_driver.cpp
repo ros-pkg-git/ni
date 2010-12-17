@@ -112,7 +112,7 @@ OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   image_transport::ImageTransport it(comm_nh);
   pub_rgb_     = it.advertiseCamera ("rgb/image_color", 15); /// @todo 15 looks like overkill
   pub_gray_    = it.advertiseCamera ("rgb/image_mono", 15);
-  pub_depth_image_ = it.advertise ("depth/image_raw", 15);
+  pub_depth_image_ = it.advertiseCamera ("depth/image", 15);
   pub_disparity_ = comm_nh_.advertise<stereo_msgs::DisparityImage>("depth/disparity", 15 );
   pub_depth_points2_ = comm_nh.advertise<sensor_msgs::PointCloud2>("depth/points2", 15);
 
@@ -308,24 +308,14 @@ void OpenNIDriver::processDepth ()
   depth_generator_.GetMetaData( depth_md );
 
   // Raw depth image
-  sensor_msgs::ImagePtr depth_ptr;
-  if (pub_depth_image_.getNumSubscribers () > 0 ||
-      (pub_depth_points2_.getNumSubscribers() > 0 && config_.point_cloud_type == OpenNI_XYZRGB))
-  {
-    depth_ptr = boost::make_shared<sensor_msgs::Image>();
-    depth_ptr->header.stamp = time;
-    depth_ptr->header.frame_id = disp_image_.header.frame_id;
-    sensor_msgs::fillImage(*depth_ptr, sensor_msgs::image_encodings::TYPE_16UC1,
-                           depth_md.YRes(), depth_md.XRes(), depth_md.XRes() * sizeof(uint16_t),
-                           (void*)depth_md.Data());
-    pub_depth_image_.publish(depth_ptr);
-  }
+  if (pub_depth_image_.getNumSubscribers () > 0)
+    publishDepthImage ( depth_md, time );
 
   // Disparity image
   if (pub_disparity_.getNumSubscribers () > 0)
   {
     disp_image_.header.stamp = time;
-    publishDisparity(depth_md);
+    publishDisparity ( depth_md );
   }
 
   // Point cloud
@@ -333,8 +323,15 @@ void OpenNIDriver::processDepth ()
   {
     cloud2_.header.stamp = time;
 
-    if (config_.point_cloud_type == OpenNI_XYZRGB)
+    if (config_.point_cloud_type == OpenNI_XYZRGB) {
+      sensor_msgs::ImagePtr depth_ptr = boost::make_shared<sensor_msgs::Image>();
+      depth_ptr->header.stamp = time;
+      depth_ptr->header.frame_id = disp_image_.header.frame_id;
+      sensor_msgs::fillImage(*depth_ptr, sensor_msgs::image_encodings::TYPE_16UC1,
+                             depth_md.YRes(), depth_md.XRes(), depth_md.XRes() * sizeof(uint16_t),
+                             (void*)depth_md.Data());
       depth_rgb_sync_->add<0>(depth_ptr);
+    }
     else
       publishUnregisteredPointCloud(depth_md);
   }
@@ -378,6 +375,47 @@ void OpenNIDriver::processRgb ()
                          boost::make_shared<const sensor_msgs::CameraInfo> (rgb_info_));
     }
   }
+}
+
+void OpenNIDriver::publishDepthImage ( const xn::DepthMetaData& depth_md, ros::Time time )
+{
+  /// @todo Disentangle this from disparity image values
+  sensor_msgs::ImagePtr msg_ptr = boost::make_shared<sensor_msgs::Image> ();
+  msg_ptr->header.stamp = time;
+  msg_ptr->header.frame_id = disp_image_.header.frame_id; /// @todo Depends on registration
+  msg_ptr->height = disp_image_.image.height;
+  msg_ptr->width  = disp_image_.image.width;
+  msg_ptr->encoding = sensor_msgs::image_encodings::TYPE_32FC1;
+  msg_ptr->step = msg_ptr->width * sizeof(float);
+  msg_ptr->data.resize(msg_ptr->width * msg_ptr->step);
+  
+  unsigned xStep = 640 / msg_ptr->width;
+  unsigned ySkip = (480 / msg_ptr->height - 1) * 640;
+
+  // Fill in the depth image data, converting mm to m
+  float bad_point = std::numeric_limits<float>::quiet_NaN ();
+  float* pixel = reinterpret_cast<float*>(&msg_ptr->data[0]);
+  unsigned depthIdx = 0;
+
+  for (unsigned yIdx = 0; yIdx < msg_ptr->height; ++yIdx, depthIdx += ySkip )
+  {
+    for (unsigned xIdx = 0; xIdx < msg_ptr->width; ++xIdx, depthIdx += xStep, ++pixel)
+    {
+      /// @todo Different values for these cases
+      if (depth_md[depthIdx] == 0 ||
+          depth_md[depthIdx] == no_sample_value_ ||
+          depth_md[depthIdx] == shadow_value_)
+        *pixel = bad_point;
+      else
+        *pixel = (float)depth_md[depthIdx] * 0.001f;
+    }
+  }
+
+  // Corresponding camera info depends on whether the depths are registered to the RGB image
+  if (config_.point_cloud_type == OpenNI_XYZRGB)
+    pub_depth_image_.publish (msg_ptr, boost::make_shared<const sensor_msgs::CameraInfo> (rgb_info_));
+  else
+    pub_depth_image_.publish (msg_ptr, boost::make_shared<const sensor_msgs::CameraInfo> (depth_info_));
 }
 
 void OpenNIDriver::publishDisparity ( const xn::DepthMetaData& depth_md )
@@ -724,6 +762,33 @@ bool OpenNIDriver::updateDeviceSettings()
       ROS_WARN ("[OpenNIDriver] Could not read no sample value!");
 
   }
+
+  // No distortion (yet!)
+#if ROS_VERSION_MINIMUM(1, 3, 0)
+  depth_info_.D = std::vector<double>( 5, 0.0 );
+  depth_info_.distortion_model = sensor_msgs::distortion_models::PLUMB_BOB;
+#else
+  depth_info_.D.assign( 0.0 );
+#endif
+  depth_info_.K.assign( 0.0 );
+  depth_info_.R.assign( 0.0 );
+  depth_info_.P.assign( 0.0 );
+
+  depth_info_.K[0] = depth_info_.K[4] = focal_length_ * (double)disp_image_.image.width / 640.0;
+  depth_info_.K[2] = disp_image_.image.width >> 1;
+  depth_info_.K[5] = disp_image_.image.height >> 1;
+  depth_info_.K[8] = 1.0;
+
+  // no rotation: identity
+  depth_info_.R[0] = depth_info_.R[4] = depth_info_.R[8] = 1.0;
+
+  // no rotation, no translation => P=K(I|0)=(K|0)
+  depth_info_.P[0]    = depth_info_.P[5] = depth_info_.K[0];
+  depth_info_.P[2]    = depth_info_.K[2];
+  depth_info_.P[6]    = depth_info_.K[5];
+  depth_info_.P[10]   = 1.0;
+  depth_info_.width   = disp_image_.image.width;
+  depth_info_.height  = disp_image_.image.height;
 
   // got baseline update disparity image
   disp_image_.T = baseline_;
