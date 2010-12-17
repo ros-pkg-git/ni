@@ -121,6 +121,7 @@ namespace openni_camera
       ros::NodeHandle param_nh_;
 
       /** \brief ROS publishers. */
+      image_transport::Publisher pub_bayer_;
       image_transport::CameraPublisher pub_rgb_, pub_gray_;
       image_transport::CameraPublisher pub_depth_image_;
       ros::Publisher pub_disparity_;

@@ -110,6 +110,7 @@ OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
 
   // Publishers and subscribers
   image_transport::ImageTransport it(comm_nh);
+  pub_bayer_   = it.advertise ("rgb/image_raw", 15);
   pub_rgb_     = it.advertiseCamera ("rgb/image_color", 15); /// @todo 15 looks like overkill
   pub_gray_    = it.advertiseCamera ("rgb/image_mono", 15);
   pub_depth_image_ = it.advertiseCamera ("depth/image", 15);
@@ -147,7 +148,7 @@ bool OpenNIDriver::isGrayRequired() const
 
 bool OpenNIDriver::isImageStreamRequired() const
 {
-  return ( isRGBRequired() || isGrayRequired() );
+  return ( pub_bayer_.getNumSubscribers() > 0 || isRGBRequired() || isGrayRequired() );
 }
 
 bool OpenNIDriver::isDepthStreamRequired() const
@@ -344,6 +345,17 @@ void OpenNIDriver::processRgb ()
   
   xn::ImageMetaData image_md;
   image_generator_.GetMetaData( image_md );
+
+  if (pub_bayer_.getNumSubscribers() > 0)
+  {
+    sensor_msgs::ImagePtr bayer_ptr = boost::make_shared<sensor_msgs::Image>();
+    bayer_ptr->header.stamp = time;
+    bayer_ptr->header.frame_id = rgb_info_.header.frame_id;
+    sensor_msgs::fillImage(*bayer_ptr, sensor_msgs::image_encodings::BAYER_GRBG8,
+                           image_md.YRes(), image_md.XRes(), image_md.XRes(),
+                           (void*)image_md.Data());
+    pub_bayer_.publish(bayer_ptr);
+  }
 
   if (isRGBRequired())
   {
