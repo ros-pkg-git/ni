@@ -156,7 +156,6 @@ namespace openni_camera
 
       static const double rgb_focal_length_;
   };
-
 } // namespace openni_camera
 
 #endif //OPENNI_NODE_OPENNI_H_
