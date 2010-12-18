@@ -517,7 +517,7 @@ void OpenNIDriver::publishRegisteredPointCloud ( const sensor_msgs::ImageConstPt
   float bad_point = std::numeric_limits<float>::quiet_NaN ();
   int depth_idx = 0;
   float* pt_data = reinterpret_cast<float*>(&cloud2_.data[0]);
-  float constant = pixel_size_ * 0.001 / F_;
+  float constant = 0.001 / rgb_focal_length_;
 
   //unsigned depthStep = depth_md.XRes () / cloud2_.width;
   //unsigned depthSkip = (depth_md.YRes () / cloud2_.height - 1) * depth_md.XRes ();
