@@ -87,6 +87,9 @@ namespace openni_camera
       /** \brief Process raw RGB data into ROS messages. */
       void processRgb ();
 
+      /** \brief Process raw depth data into image message and publish. */
+      void publishDepthImage ( const xn::DepthMetaData& depth_md, ros::Time time );
+
       /** \brief Process unregistered depth data into DisparityImage message and publish. */
       void publishDisparity ( const xn::DepthMetaData& depth_md );
 
@@ -118,8 +121,9 @@ namespace openni_camera
       ros::NodeHandle param_nh_;
 
       /** \brief ROS publishers. */
+      image_transport::Publisher pub_bayer_;
       image_transport::CameraPublisher pub_rgb_, pub_gray_;
-      image_transport::Publisher pub_depth_image_;
+      image_transport::CameraPublisher pub_depth_image_;
       ros::Publisher pub_disparity_;
       ros::Publisher pub_depth_points2_;
 
@@ -145,7 +149,7 @@ namespace openni_camera
       /** \brief PointCloud2 data. */
       sensor_msgs::PointCloud2 cloud2_;
       /** \brief Camera info data. */
-      sensor_msgs::CameraInfo rgb_info_;
+      sensor_msgs::CameraInfo depth_info_, rgb_info_;
       /** \brief Disparity Image */
       stereo_msgs::DisparityImage disp_image_;
 
