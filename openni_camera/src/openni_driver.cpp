@@ -204,6 +204,9 @@ OpenNIDriver::spin ()
 
   while (comm_nh_.ok ())
   {
+    // Spin for ROS message processing
+    ros::spinOnce (); // At top to allow use of continue below. 
+    
     if (!isImageStreamRequired() && image_generator_.IsGenerating())
     {
       //cout << "stopping image stream..." << flush;
@@ -296,8 +299,6 @@ OpenNIDriver::spin ()
 
     r.sleep(); /// @todo should only happen if no new data
 
-    // Spin for ROS message processing
-    ros::spinOnce ();
   }
   return (true);
 }
