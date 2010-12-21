@@ -88,17 +88,17 @@ namespace openni_camera
       void processRgb ();
 
       /** \brief Process raw depth data into image message and publish. */
-      void publishDepthImage ( const xn::DepthMetaData& depth_md, ros::Time time );
+      void publishDepthImage ( const xn::DepthMetaData& depth_md, ros::Time time ) const;
 
       /** \brief Process unregistered depth data into DisparityImage message and publish. */
       void publishDisparity ( const xn::DepthMetaData& depth_md );
 
       /** \brief Process unregistered depth data into point cloud message and publish. */
-      void publishUnregisteredPointCloud ( const xn::DepthMetaData& depth_md );
+      void publishXYZPointCloud ( const xn::DepthMetaData& depth_md );
 
       /** \brief Process synchronized depth and color images into XYZRGB point cloud and publish. */
-      void publishRegisteredPointCloud ( const sensor_msgs::ImageConstPtr& depth_msg,
-                                         const sensor_msgs::ImageConstPtr& rgb_msg );
+      void publishXYZRGBPointCloud ( const sensor_msgs::ImageConstPtr& depth_msg,
+                                     const sensor_msgs::ImageConstPtr& rgb_msg );
     
       /** \brief An OpenNI context object. */
       xn::Context context_;
@@ -108,14 +108,13 @@ namespace openni_camera
       xn::ImageGenerator image_generator_;
 
    private:
-      bool isRGBRequired() const;
-      bool isGrayRequired() const;
-      bool isImageStreamRequired() const;
-      bool isDepthStreamRequired() const;
+      inline bool isRGBRequired() const;
+      inline bool isGrayRequired() const;
+      inline bool isImageStreamRequired() const;
+      inline bool isDepthStreamRequired() const;
       
       void bayer2RGB ( const xn::ImageMetaData& bayer, sensor_msgs::Image& image, int method = 0 );
       void bayer2Gray ( const xn::ImageMetaData& bayer, sensor_msgs::Image& image, int method = 0 );
-      //void disparity_downsampling( )
       /** \brief A copy of the communication NodeHandle. */
       ros::NodeHandle comm_nh_;
       ros::NodeHandle param_nh_;
@@ -138,8 +137,17 @@ namespace openni_camera
       ReconfigureServer reconfigure_server_;
       Config config_;
 
-      XnDouble pixel_size_, baseline_;
-      XnUInt64 focal_length_, shadow_value_, no_sample_value_, F_;
+      /**brief the distance between the IR projector and the IR camera*/
+      XnDouble baseline_;
+
+      /** \brief focal length in pixels for the IR camera in VGA resolution*/
+      XnUInt64 depth_focal_length_VGA_;
+      
+      /** the value for shadow (not occluded) pixels*/
+      XnUInt64 shadow_value_;
+
+      /** the value for pixels without a valid disparity measurement */
+      XnUInt64 no_sample_value_;
 
       /// @todo May actually want to allocate each time when using nodelets
       /** \brief Image data. */
@@ -156,10 +164,45 @@ namespace openni_camera
       /** \brief Callback for dynamic_reconfigure */
       void configCb (Config &config, uint32_t level);
 
+      /** \brief change device parameters and internal stuctures*/
       bool updateDeviceSettings();
 
-      static const double rgb_focal_length_;
+      /** \brief focal length of the RGB camera in pixels for VGA resolution*/
+      static const double rgb_focal_length_VGA_;
+
+      /** \brief frame width for depth stream */
+      static const unsigned depth_stream_width = 640;
+      
+      /** \brief frame height for depth stream */
+      static const unsigned depth_stream_height = 480;
+      
+      /** \brief frames per second for depth stream */
+      static const unsigned depth_stream_fps = 30;
   };
+
+  bool OpenNIDriver::isRGBRequired() const
+  {
+    return ( ( pub_rgb_.getNumSubscribers() > 0 ) ||
+             ( pub_depth_points2_.getNumSubscribers() > 0 && config_.point_cloud_type == OpenNI_XYZRGB )
+           );
+  }
+
+  bool OpenNIDriver::isGrayRequired() const
+  {
+    return ( ( pub_gray_.getNumSubscribers() > 0 ) );
+  }
+
+  bool OpenNIDriver::isImageStreamRequired() const
+  {
+    return ( pub_bayer_.getNumSubscribers() > 0 || isRGBRequired() || isGrayRequired() );
+  }
+
+  bool OpenNIDriver::isDepthStreamRequired() const
+  {
+    return ( pub_depth_points2_.getNumSubscribers() > 0 ||
+             pub_disparity_.getNumSubscribers()     > 0 ||
+             pub_depth_image_.getNumSubscribers()   > 0 );
+  }
 } // namespace openni_camera
 
 #endif //OPENNI_NODE_OPENNI_H_

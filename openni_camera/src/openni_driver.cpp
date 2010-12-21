@@ -6,6 +6,8 @@
  *    William Morris <morris@ee.ccny.cuny.edu>
  *    Stéphane Magnenat <stephane.magnenat@mavt.ethz.ch>
  *    Radu Bogdan Rusu <rusu@willowgarage.com>
+ *    Suat Gedikli <gedikli@willowgarage.com>
+ *    Patrick Mihelich <mihelich@willowgarage.com>
  *
  *  All rights reserved.
  *
@@ -55,7 +57,8 @@ using namespace std;
 namespace openni_camera 
 {
 
-const double OpenNIDriver::rgb_focal_length_ = 525;
+// Suat: This magic number is the focal length of the RGB camera and comes from our Primesense/Kinect calibration routine.
+const double OpenNIDriver::rgb_focal_length_VGA_ = 525;
 
 typedef union
 {
@@ -64,7 +67,7 @@ typedef union
     unsigned char Blue; // Blue channel
     unsigned char Green; // Green channel
     unsigned char Red; // Red channel
-    unsigned char Alpha; // alpha
+    unsigned char Alpha; // Alpha channel
   };
   float float_value;
   long long_value;
@@ -79,7 +82,6 @@ OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   , shadow_value_ (0)
   , no_sample_value_ (0)
 {
-  //cout << "OpenNIDriver::OpenNIDriver" << endl;
   // Init the OpenNI context
   XnStatus status = context_.Init ();
 
@@ -88,7 +90,6 @@ OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
     ROS_ERROR ("[OpenNIDriver] Init: %s", xnGetStatusString (status));
     return;
   }
-//  ROS_INFO ("[OpenNIDriver] Initialization successful.");
 
   // Set up reconfigure server
   ReconfigureServer::CallbackType f = boost::bind(&OpenNIDriver::configCb, this, _1, _2);
@@ -122,10 +123,8 @@ OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   /// @todo Set inter-message lower bound, age penalty, max interval to lower latency
   // Connect no inputs, we'll add messages manually
   depth_rgb_sync_.reset( new Synchronizer(sync_policy) );
-  depth_rgb_sync_->registerCallback(boost::bind(&OpenNIDriver::publishRegisteredPointCloud,
+  depth_rgb_sync_->registerCallback(boost::bind(&OpenNIDriver::publishXYZRGBPointCloud,
                                                 this, _1, _2));
-
-  //cout << "OpenNIDriver::OpenNIDriver...end" << endl;
 }
 
 /** \brief Destructor */
@@ -135,148 +134,73 @@ OpenNIDriver::~OpenNIDriver ()
   context_.Shutdown ();
 }
 
-bool OpenNIDriver::isRGBRequired() const
-{
-  return ( ( pub_rgb_.getNumSubscribers() > 0 ) ||
-           ( pub_depth_points2_.getNumSubscribers() > 0 && config_.point_cloud_type == OpenNI_XYZRGB )
-         );
-}
-
-bool OpenNIDriver::isGrayRequired() const
-{
-  return ( ( pub_gray_.getNumSubscribers() > 0 ) );
-}
-
-bool OpenNIDriver::isImageStreamRequired() const
-{
-  return ( pub_bayer_.getNumSubscribers() > 0 || isRGBRequired() || isGrayRequired() );
-}
-
-bool OpenNIDriver::isDepthStreamRequired() const
-{
-  return ( pub_depth_points2_.getNumSubscribers() > 0 ||
-           pub_disparity_.getNumSubscribers() > 0     ||
-           pub_depth_image_.getNumSubscribers() > 0 );
-}
-
 /** \brief Spin loop. */
-bool 
-OpenNIDriver::spin ()
+bool OpenNIDriver::spin ()
 {
-  /// @Pat: I've disabled this code from publish() now for simplicity. I suspect that
-  /// with IsNewDataAvailable (before updating) we can get more accurate timestamp offsets.
-  /*
-  static bool first_publish = true;
-  static ros::Duration time_offset;
-  static XnUInt64 last_image_timestamp = 0;
-  static XnUInt64 last_depth_timestamp = 0;
-
-  if (first_publish)
-  {
-    last_image_timestamp = image_generator_.GetTimestamp ();
-    last_depth_timestamp = depth_generator_.GetTimestamp ();
-    ros::Time ros_time = ros::Time::now ();
-
-    XnUInt64 first_image_timestamp = min( last_image_timestamp, last_depth_timestamp );
-
-    ros::Time current (first_image_timestamp / 1000000, (first_image_timestamp % 1000000) * 1000);
-
-    time_offset = ros_time - current;
-
-    first_publish = false;
-    return; // dont publish right now!
-  }
-
-  XnUInt64 image_timestamp = image_generator_.GetTimestamp ();
-  XnUInt64 depth_timestamp = depth_generator_.GetTimestamp ();
-
-  if (image_timestamp != last_image_timestamp)
-  {
-    ros::Time time (image_timestamp / 1000000, (image_timestamp % 1000000) * 1000);
-    time += time_offset;
-    // etc.
-  }
-  */
-  
   XnStatus status;
-  //cout << "OpenNIDriver::spin" << endl;
   ros::Duration r (0.01);
 
   while (comm_nh_.ok ())
   {
     if (!isImageStreamRequired() && image_generator_.IsGenerating())
     {
-      //cout << "stopping image stream..." << flush;
       status = image_generator_.StopGenerating();
       if (status != XN_STATUS_OK)
       {
         ROS_ERROR ("[OpenNIDriver::spin] Error in stopping image stream (): %s", xnGetStatusString (status));
         return (false);
       }
-      //cout << "OK" << endl;
     }
     else if (isImageStreamRequired() && !image_generator_.IsGenerating())
     {
-      //cout << "starting image stream..." << flush;
       status = image_generator_.StartGenerating();
       if (status != XN_STATUS_OK)
       {
         ROS_ERROR ("[OpenNIDriver::spin] Error in starting image stream (): %s", xnGetStatusString (status));
         return (false);
       }
-      //cout << "OK" << endl;
     }
 
     if (!isDepthStreamRequired() && depth_generator_.IsGenerating())
     {
-      //cout << "stopping depth stream..." << flush;
       status = depth_generator_.StopGenerating();
       if (status != XN_STATUS_OK)
       {
         ROS_ERROR ("[OpenNIDriver::spin] Error in stopping depth stream (): %s", xnGetStatusString (status));
         return (false);
       }
-      //cout << "OK" << endl;
     }
     else if (isDepthStreamRequired() && !depth_generator_.IsGenerating())
     {
-      //cout << "starting depth stream..." << flush;
       status = depth_generator_.StartGenerating();
       if (status != XN_STATUS_OK)
       {
         ROS_ERROR ("[OpenNIDriver::spin] Error in starting depth stream (): %s", xnGetStatusString (status));
         return (false);
       }
-      //cout << "OK" << endl;
 
       if (config_.point_cloud_type != OpenNI_XYZ_unregistered)
       {
-        //cout << "switching on registration..." << flush;
         status = depth_generator_.GetAlternativeViewPointCap().SetViewPoint( image_generator_ );
         if (status != XN_STATUS_OK)
         {
           ROS_ERROR ("[OpenNIDriver::spin] Error in switching on depth stream registration: %s", xnGetStatusString (status));
           return (false);
         }
-        //cout << "OK" << endl;
       }
       else
       {
-        //cout << "switching off registration..." << flush;
         status = depth_generator_.GetAlternativeViewPointCap().ResetViewPoint();
         if (status != XN_STATUS_OK)
         {
           ROS_ERROR ("[OpenNIDriver::spin] Error in switching off depth stream registration: %s", xnGetStatusString (status));
           return (false);
         }
-        //cout << "OK" << endl;
       }
     }
 
     if (!isImageStreamRequired() && !isDepthStreamRequired())
     {
-      //cout << "no subscribers -> sleep..." << endl;
-      // wait for subscribers!
       r.sleep();
       continue;
     }
@@ -326,7 +250,8 @@ void OpenNIDriver::processDepth ()
   {
     cloud2_.header.stamp = time;
 
-    if (config_.point_cloud_type == OpenNI_XYZRGB) {
+    if (config_.point_cloud_type == OpenNI_XYZRGB)
+    {
       sensor_msgs::ImagePtr depth_ptr = boost::make_shared<sensor_msgs::Image>();
       depth_ptr->header.stamp = time;
       depth_ptr->header.frame_id = disp_image_.header.frame_id;
@@ -336,7 +261,7 @@ void OpenNIDriver::processDepth ()
       depth_rgb_sync_->add<0>(depth_ptr);
     }
     else
-      publishUnregisteredPointCloud(depth_md);
+      publishXYZPointCloud(depth_md);
   }
 }
 
@@ -391,7 +316,7 @@ void OpenNIDriver::processRgb ()
   }
 }
 
-void OpenNIDriver::publishDepthImage ( const xn::DepthMetaData& depth_md, ros::Time time )
+void OpenNIDriver::publishDepthImage ( const xn::DepthMetaData& depth_md, ros::Time time ) const
 {
   /// @todo Disentangle this from disparity image values
   sensor_msgs::ImagePtr msg_ptr = boost::make_shared<sensor_msgs::Image> ();
@@ -403,8 +328,8 @@ void OpenNIDriver::publishDepthImage ( const xn::DepthMetaData& depth_md, ros::T
   msg_ptr->step = msg_ptr->width * sizeof(float);
   msg_ptr->data.resize(msg_ptr->width * msg_ptr->step);
   
-  unsigned xStep = 640 / msg_ptr->width;
-  unsigned ySkip = (480 / msg_ptr->height - 1) * 640;
+  unsigned xStep = depth_stream_width / msg_ptr->width;
+  unsigned ySkip = (depth_stream_height / msg_ptr->height - 1) * depth_stream_width;
 
   // Fill in the depth image data, converting mm to m
   float bad_point = std::numeric_limits<float>::quiet_NaN ();
@@ -434,16 +359,16 @@ void OpenNIDriver::publishDepthImage ( const xn::DepthMetaData& depth_md, ros::T
 
 void OpenNIDriver::publishDisparity ( const xn::DepthMetaData& depth_md )
 {
-  unsigned xStep = 640 / disp_image_.image.width;
-  unsigned ySkip = (480 / disp_image_.image.height - 1) * 640;
+  unsigned xStep = depth_stream_width / disp_image_.image.width;
+  unsigned ySkip = (depth_stream_height / disp_image_.image.height - 1) * depth_stream_width;
 
   // Fill in the depth image data
   // iterate over all elements and fill disparity matrix: disp[x,y] = f * b / z_distance[x,y];
   float constant;
   if( config_.point_cloud_type == OpenNI_XYZ_unregistered)
-    constant = focal_length_ * baseline_ * 1000.0;
+    constant = depth_focal_length_VGA_ * baseline_ * 1000.0;
   else
-    constant = rgb_focal_length_ * baseline_ * 1000.0;
+    constant = rgb_focal_length_VGA_ * baseline_ * 1000.0;
 
   float* pixel = reinterpret_cast<float*>(&disp_image_.image.data[0]);
   unsigned depthIdx = 0;
@@ -465,7 +390,7 @@ void OpenNIDriver::publishDisparity ( const xn::DepthMetaData& depth_md )
   pub_disparity_.publish ( disp_image_ );
 }
 
-void OpenNIDriver::publishUnregisteredPointCloud ( const xn::DepthMetaData& depth_md )
+void OpenNIDriver::publishXYZPointCloud ( const xn::DepthMetaData& depth_md )
 {
   float bad_point = std::numeric_limits<float>::quiet_NaN ();
   int depth_idx = 0;
@@ -473,9 +398,9 @@ void OpenNIDriver::publishUnregisteredPointCloud ( const xn::DepthMetaData& dept
   
   float constant;
   if( config_.point_cloud_type == OpenNI_XYZ_unregistered)
-    constant = 0.001 / focal_length_;
+    constant = 0.001 / depth_focal_length_VGA_;
   else
-    constant = 0.001 / rgb_focal_length_;
+    constant = 0.001 / rgb_focal_length_VGA_;
 
   unsigned depthStep = depth_md.XRes () / cloud2_.width;
   unsigned depthSkip = (depth_md.YRes () / cloud2_.height - 1) * depth_md.XRes ();
@@ -511,16 +436,14 @@ void OpenNIDriver::publishUnregisteredPointCloud ( const xn::DepthMetaData& dept
   pub_depth_points2_.publish (boost::make_shared<const sensor_msgs::PointCloud2> (cloud2_));
 }
 
-void OpenNIDriver::publishRegisteredPointCloud ( const sensor_msgs::ImageConstPtr& depth_msg,
-                                                 const sensor_msgs::ImageConstPtr& rgb_msg )
+void OpenNIDriver::publishXYZRGBPointCloud ( const sensor_msgs::ImageConstPtr& depth_msg,
+                                             const sensor_msgs::ImageConstPtr& rgb_msg )
 {
   float bad_point = std::numeric_limits<float>::quiet_NaN ();
   int depth_idx = 0;
   float* pt_data = reinterpret_cast<float*>(&cloud2_.data[0]);
-  float constant = 0.001 / rgb_focal_length_;
+  float constant = 0.001 / rgb_focal_length_VGA_;
 
-  //unsigned depthStep = depth_md.XRes () / cloud2_.width;
-  //unsigned depthSkip = (depth_md.YRes () / cloud2_.height - 1) * depth_md.XRes ();
   unsigned depthStep = depth_msg->width / cloud2_.width;
   unsigned depthSkip = (depth_msg->height / cloud2_.height - 1) * depth_msg->width;
 
@@ -746,45 +669,42 @@ bool OpenNIDriver::updateDeviceSettings()
     }
 
     // Set the correct mode on the depth/image generator
-    mode.nXRes = 640;
-    mode.nYRes = 480;
-    mode.nFPS  = 30;
+    mode.nXRes = depth_stream_width;
+    mode.nYRes = depth_stream_height;
+    mode.nFPS  = depth_stream_fps;
     if (depth_generator_.SetMapOutputMode (mode) != XN_STATUS_OK)
     {
       ROS_ERROR("[OpenNIDriver] Failed to set depth output mode");
       return (false);
     }
 
+    XnDouble pixel_size;
     // Read parameters from the camera
-    if (depth_generator_.GetRealProperty ("ZPPS", pixel_size_) != XN_STATUS_OK)
+    if (depth_generator_.GetRealProperty ("ZPPS", pixel_size) != XN_STATUS_OK)
       ROS_ERROR ("[OpenNIDriver] Could not read pixel size!");
-//    else
-//      ROS_INFO_STREAM ("[OpenNIDriver] Pixel size: " << pixel_size_);
 
-    pixel_size_ *= 2.0;
+    // pixel size @ VGA = pixel size @ SXGA x 2
+    pixel_size *= 2.0;
 
-    if (depth_generator_.GetIntProperty ("ZPD", F_) != XN_STATUS_OK)
+    // focal length of IR camera in pixels for VGA resolution
+    XnUInt64 depth_focal_length_VGA;
+    if (depth_generator_.GetIntProperty ("ZPD", depth_focal_length_VGA) != XN_STATUS_OK)
       ROS_ERROR ("[OpenNIDriver] Could not read virtual plane distance!");
-//    else
-//      ROS_INFO_STREAM ("[OpenNIDriver] Virtual plane distance: " << F_);
 
     if (depth_generator_.GetRealProperty ("LDDIS", baseline_) != XN_STATUS_OK)
       ROS_ERROR ("[OpenNIDriver] Could not read base line!");
-//    else
-//      ROS_INFO_STREAM ("[OpenNIDriver] Base line: " << baseline_);
 
     // baseline from cm -> meters
     baseline_ *= 0.01;
 
     //focal length from mm -> pixels (valid for 640x480)
-    focal_length_ = (double)F_/pixel_size_;
+    depth_focal_length_VGA_ = (double)depth_focal_length_VGA/pixel_size;
 
     if (depth_generator_.GetIntProperty ("ShadowValue", shadow_value_) != XN_STATUS_OK)
       ROS_WARN ("[OpenNIDriver] Could not read shadow value!");
 
     if (depth_generator_.GetIntProperty ("NoSampleValue", no_sample_value_) != XN_STATUS_OK)
       ROS_WARN ("[OpenNIDriver] Could not read no sample value!");
-
   }
 
   // No distortion (yet!)
@@ -798,7 +718,7 @@ bool OpenNIDriver::updateDeviceSettings()
   depth_info_.R.assign( 0.0 );
   depth_info_.P.assign( 0.0 );
 
-  depth_info_.K[0] = depth_info_.K[4] = focal_length_ * (double)disp_image_.image.width / 640.0;
+  depth_info_.K[0] = depth_info_.K[4] = depth_focal_length_VGA_ * (double)disp_image_.image.width / (double)depth_stream_width;
   depth_info_.K[2] = disp_image_.image.width >> 1;
   depth_info_.K[5] = disp_image_.image.height >> 1;
   depth_info_.K[8] = 1.0;
@@ -816,7 +736,7 @@ bool OpenNIDriver::updateDeviceSettings()
 
   // got baseline update disparity image
   disp_image_.T = baseline_;
-  disp_image_.f  = focal_length_;
+  disp_image_.f  = depth_focal_length_VGA_;
   /// @todo Compute these values from DepthGenerator::GetDeviceMaxDepth() and the like
   disp_image_.min_disparity = 0.0;
   disp_image_.max_disparity = disp_image_.T * disp_image_.f / 0.3;
@@ -833,7 +753,7 @@ bool OpenNIDriver::updateDeviceSettings()
   rgb_info_.R.assign( 0.0 );
   rgb_info_.P.assign( 0.0 );
 
-  rgb_info_.K[0] = rgb_info_.K[4] = rgb_focal_length_ * (double)image_width / 640.0;
+  rgb_info_.K[0] = rgb_info_.K[4] = rgb_focal_length_VGA_ * (double)image_width / 640.0;
   rgb_info_.K[2] = image_width >> 1;
   rgb_info_.K[5] = image_height >> 1;
   rgb_info_.K[8] = 1.0;
@@ -870,13 +790,13 @@ bool OpenNIDriver::updateDeviceSettings()
   }
 
   // InputFormat should be 6 for Kinect, 5 for PS
-  int image_input_format = 6;
+  int image_input_format = 5;
   if (param_nh_.getParam ("image_input_format", image_input_format))
   {
     if (image_generator_.SetIntProperty ("InputFormat", image_input_format) != XN_STATUS_OK)
       ROS_ERROR ("[OpenNIDriver] Error setting the image input format to Uncompressed 8-bit BAYER!");
   }
-  
+  /*
   // RegistrationType should be 2 (software) for Kinect, 1 (hardware) for PS
   int registration_type = 0;
   if (param_nh_.getParam ("registration_type", registration_type))
@@ -890,28 +810,26 @@ bool OpenNIDriver::updateDeviceSettings()
     ROS_ERROR("[OpenNIDriver] Failed to set image pixel format");
     return (false);
   }
-
+//*/
   if (config_.point_cloud_type == OpenNI_XYZ_unregistered) // not registered pc
   {
-    //cout << "switching off registration..." << flush;
     status = depth_generator_.GetAlternativeViewPointCap().ResetViewPoint();
     if (status != XN_STATUS_OK)
     {
       ROS_ERROR ("[OpenNIDriver::spin] Error in switching off registering on depth stream: %s", xnGetStatusString (status));
       return (false);
     }
-    //cout << "OK" << endl;
   }
   else
   {
-    //cout << "switching on registration..." << flush;
     status = depth_generator_.GetAlternativeViewPointCap().SetViewPoint( image_generator_ );
     if (status != XN_STATUS_OK)
     {
-      ROS_ERROR ("[OpenNIDriver::spin] Error in switching on registering on depth stream: %s", xnGetStatusString (status));
+      ROS_ERROR ("[OpenNIDriver::spin] Error in switching on depth stream registration: %s", xnGetStatusString (status));
       return (false);
     }
-    //cout << "OK" << endl;
+    // point clouds and disparity images are now transformed to the RGB camera coordinate frame
+    depth_info_ = rgb_info_;
   }
 
   return true;
