@@ -39,6 +39,7 @@
  */
 
 #include "openni_camera/openni.h"
+#include "nodelet/loader.h"
 
 /* ---[ */
 int 
@@ -56,6 +57,8 @@ int
 
   // Create the OpenNIDriver object
   openni_camera::OpenNIDriver k (comm_nh, param_nh);
+
+  nodelet::Loader nodelet_manager;
 
   k.spin ();
   return (0);
