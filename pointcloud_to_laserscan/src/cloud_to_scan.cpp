@@ -27,19 +27,22 @@
  * POSSIBILITY OF SUCH DAMAGE.                                                                                           
  */
 
-
+#include "ros/ros.h"
 #include "pluginlib/class_list_macros.h"
 #include "nodelet/nodelet.h"
-#include "ros/ros.h"
 #include "sensor_msgs/LaserScan.h"
-#include "sensor_msgs/PointCloud2.h"
 #include "pcl/point_cloud.h"
+#include "pcl_ros/point_cloud.h"
 #include "pcl/point_types.h"
 #include "pcl/ros/conversions.h"
 
 
+
+
 namespace pointcloud_to_laserscan
 {
+typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
+
 class CloudToScan : public nodelet::Nodelet
 {
 public:
@@ -62,15 +65,15 @@ private:
 
     private_nh.getParam("output_frame_id", output_frame_id_);
     pub_ = nh.advertise<sensor_msgs::LaserScan>("scan", 10);
-    sub_ = nh.subscribe("cloud", 10, &CloudToScan::callback, this);
+    sub_ = nh.subscribe<PointCloud>("cloud", 10, &CloudToScan::callback, this);
   };
 
-  void callback(const sensor_msgs::PointCloud2::ConstPtr& input)
+  void callback(const PointCloud::ConstPtr& cloud)
   {
     sensor_msgs::LaserScanPtr output(new sensor_msgs::LaserScan());
     NODELET_DEBUG("Got cloud");
     //Copy Header
-    output->header = input->header;
+    output->header = cloud->header;
     output->header.frame_id = output_frame_id_;
     output->angle_min = -M_PI/2;
     output->angle_max = M_PI/2;
@@ -83,10 +86,10 @@ private:
     uint32_t ranges_size = std::ceil((output->angle_max - output->angle_min) / output->angle_increment);
     output->ranges.assign(ranges_size, output->range_max + 1.0);
 
-    pcl::PointCloud<pcl::PointXYZ> cloud;
-    pcl::fromROSMsg(*input, cloud);
+    //pcl::PointCloud<pcl::PointXYZ> cloud;
+    //pcl::fromROSMsg(*input, cloud);
     
-    for (pcl::PointCloud< pcl::PointXYZ >::const_iterator it = cloud.begin(); it != cloud.end(); ++it)
+    for (PointCloud::const_iterator it = cloud->begin(); it != cloud->end(); ++it)
     {
       const float &x = it->x;
       const float &y = it->y;

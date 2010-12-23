@@ -10,7 +10,7 @@
   <url>http://ros.org/wiki/pointcloud_to_laserscan</url>
   <depend package="nodelet"/>
   <depend package="sensor_msgs"/>
-  <depend package="pcl"/>
+  <depend package="pcl_ros"/>
   <export>
     <nodelet plugin="${prefix}/nodelets.xml" />
   </export>
