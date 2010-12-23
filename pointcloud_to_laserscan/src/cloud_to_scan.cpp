@@ -41,7 +41,7 @@
 
 namespace pointcloud_to_laserscan
 {
-typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
+typedef pcl::PointCloud<pcl::PointXYZRGB> PointCloud;
 
 class CloudToScan : public nodelet::Nodelet
 {

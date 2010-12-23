@@ -41,6 +41,8 @@
 #include "openni_camera/openni.h"
 #include <sensor_msgs/image_encodings.h>
 #include <sensor_msgs/fill_image.h>
+#include "pcl_ros/point_cloud.h"
+#include "pcl/point_types.h"
 #include <boost/make_shared.hpp>
 #include <vector>
 
@@ -54,6 +56,7 @@ using namespace std;
 
 namespace openni_camera 
 {
+typedef pcl::PointCloud<pcl::PointXYZRGB> PointCloud;
 
 const double OpenNIDriver::rgb_focal_length_ = 525;
 
@@ -116,7 +119,7 @@ OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   pub_gray_    = it.advertiseCamera ("rgb/image_mono", 15);
   pub_depth_image_ = it.advertiseCamera ("depth/image", 15);
   pub_disparity_ = comm_nh_.advertise<stereo_msgs::DisparityImage>("depth/disparity", 15 );
-  pub_depth_points2_ = comm_nh.advertise<sensor_msgs::PointCloud2>("depth/points2", 15);
+  pub_depth_points2_ = comm_nh.advertise<PointCloud >("depth/points2", 15);
 
   SyncPolicy sync_policy(4); // queue size
   /// @todo Set inter-message lower bound, age penalty, max interval to lower latency
@@ -468,6 +471,14 @@ void OpenNIDriver::publishDisparity ( const xn::DepthMetaData& depth_md )
 
 void OpenNIDriver::publishUnregisteredPointCloud ( const xn::DepthMetaData& depth_md )
 {
+  PointCloud::Ptr cloud_out = boost::make_shared<PointCloud> ();
+  cloud_out->header = cloud2_.header;
+  cloud_out->height = cloud2_.height;
+  cloud_out->width = cloud2_.width;
+  cloud_out->is_dense = cloud2_.is_dense;
+
+  cloud_out->points.resize(cloud_out->height * cloud_out->width);
+
   float bad_point = std::numeric_limits<float>::quiet_NaN ();
   int depth_idx = 0;
   float* pt_data = reinterpret_cast<float*>(&cloud2_.data[0]);
@@ -489,32 +500,43 @@ void OpenNIDriver::publishUnregisteredPointCloud ( const xn::DepthMetaData& dept
   {
     for (int u = 0; u < (int)cloud2_.width; ++u, depth_idx += depthStep, pt_data += cloud2_.fields.size())
     {
+      pcl::PointXYZRGB& pt = (*cloud_out)(u, v);
+      
       // Check for invalid measurements
       if (depth_md[depth_idx] == 0 ||
           depth_md[depth_idx] == no_sample_value_ ||
           depth_md[depth_idx] == shadow_value_)
       {
         // not valid
-        pt_data[0] = bad_point;
-        pt_data[1] = bad_point;
-        pt_data[2] = bad_point;
+        pt.x = bad_point;
+        pt.y = bad_point;
+        pt.z = bad_point;
+        pt.rgb = bad_point;
         continue;
       }
 
       // Fill in XYZ
-      pt_data[0] = (u - centerX) * depth_md[depth_idx] * constant;
-      pt_data[1] = (v - centerY) * depth_md[depth_idx] * constant;
-      pt_data[2] = depth_md[depth_idx] * 0.001;
+      pt.x = (u - centerX) * depth_md[depth_idx] * constant;
+      pt.y = (v - centerY) * depth_md[depth_idx] * constant;
+      pt.z = depth_md[depth_idx] * 0.001;
     }
   }
 
   /// @todo Depth frame here
-  pub_depth_points2_.publish (boost::make_shared<const sensor_msgs::PointCloud2> (cloud2_));
+  pub_depth_points2_.publish (cloud_out);
 }
 
 void OpenNIDriver::publishRegisteredPointCloud ( const sensor_msgs::ImageConstPtr& depth_msg,
                                                  const sensor_msgs::ImageConstPtr& rgb_msg )
 {
+  PointCloud::Ptr cloud_out = boost::make_shared<PointCloud> ();
+  cloud_out->header = cloud2_.header;
+  cloud_out->height = cloud2_.height;
+  cloud_out->width = cloud2_.width;
+  cloud_out->is_dense = cloud2_.is_dense;
+
+  cloud_out->points.resize(cloud_out->height * cloud_out->width);
+  
   float bad_point = std::numeric_limits<float>::quiet_NaN ();
   int depth_idx = 0;
   float* pt_data = reinterpret_cast<float*>(&cloud2_.data[0]);
@@ -547,34 +569,36 @@ void OpenNIDriver::publishRegisteredPointCloud ( const sensor_msgs::ImageConstPt
   {
     for (int u = 0; u < (int)cloud2_.width; ++u, depth_idx += depthStep, pt_data += cloud2_.fields.size(), color_idx += colorStep)
     {
+      pcl::PointXYZRGB& pt = (*cloud_out)(u, v);
+      
       // Check for invalid measurements
       if (depth_md[depth_idx] == 0 ||
           depth_md[depth_idx] == no_sample_value_ ||
           depth_md[depth_idx] == shadow_value_)
       {
         // not valid
-        pt_data[0] = bad_point;
-        pt_data[1] = bad_point;
-        pt_data[2] = bad_point;
-        pt_data[3] = bad_point;
+        pt.x = bad_point;
+        pt.y = bad_point;
+        pt.z = bad_point;
+        pt.rgb = bad_point;
         continue;
       }
 
       // Fill in XYZ
-      pt_data[0] = (u - centerX) * depth_md[depth_idx] * constant;
-      pt_data[1] = (v - centerY) * depth_md[depth_idx] * constant;
-      pt_data[2] = depth_md[depth_idx] * 0.001;
+      pt.x = (u - centerX) * depth_md[depth_idx] * constant;
+      pt.y = (v - centerY) * depth_md[depth_idx] * constant;
+      pt.z = depth_md[depth_idx] * 0.001;
 
       // Fill in color
       color.Red   = rgb_buffer[color_idx];
       color.Green = rgb_buffer[color_idx + 1];
       color.Blue  = rgb_buffer[color_idx + 2];
-      pt_data[3] = color.float_value;
+      pt.rgb = color.float_value;
     }
   }
 
   /// @todo RGB frame here
-  pub_depth_points2_.publish (boost::make_shared<const sensor_msgs::PointCloud2> (cloud2_));
+  pub_depth_points2_.publish (cloud_out);
 }
 
 void OpenNIDriver::configCb (Config &config, uint32_t level)
