@@ -76,8 +76,7 @@ namespace openni_camera
       /** \brief Destructor */
       virtual ~OpenNIDriver ();
       
-      /** \brief Spin (!)
-        */
+      /** \brief Spin (!) */
       bool spin ();
 
     protected:
@@ -88,13 +87,13 @@ namespace openni_camera
       void processRgb ();
 
       /** \brief Process raw depth data into image message and publish. */
-      void publishDepthImage ( const xn::DepthMetaData& depth_md, ros::Time time ) const;
+      void publishDepthImage ( const xn::DepthMetaData& depth_md, ros::Time time );
 
       /** \brief Process unregistered depth data into DisparityImage message and publish. */
-      void publishDisparity ( const xn::DepthMetaData& depth_md );
+      void publishDisparity ( const xn::DepthMetaData& depth_md, ros::Time time );
 
       /** \brief Process unregistered depth data into point cloud message and publish. */
-      void publishXYZPointCloud ( const xn::DepthMetaData& depth_md );
+      void publishXYZPointCloud ( const xn::DepthMetaData& depth_md, ros::Time time );
 
       /** \brief Process synchronized depth and color images into XYZRGB point cloud and publish. */
       void publishXYZRGBPointCloud ( const sensor_msgs::ImageConstPtr& depth_msg,
@@ -108,13 +107,17 @@ namespace openni_camera
       xn::ImageGenerator image_generator_;
 
    private:
-      inline bool isRGBRequired() const;
-      inline bool isGrayRequired() const;
-      inline bool isImageStreamRequired() const;
-      inline bool isDepthStreamRequired() const;
+      inline bool isRGBRequired () const;
+      inline bool isGrayRequired () const;
+      inline bool isImageStreamRequired () const;
+      inline bool isDepthStreamRequired () const;
       
-      void bayer2RGB ( const xn::ImageMetaData& bayer, sensor_msgs::Image& image, int method = 0 );
-      void bayer2Gray ( const xn::ImageMetaData& bayer, sensor_msgs::Image& image, int method = 0 );
+      void bayer2RGB ( const xn::ImageMetaData& bayer, sensor_msgs::Image& image, int method = 0 ) const;
+      void bayer2Gray ( const xn::ImageMetaData& bayer, sensor_msgs::Image& image, int method = 0 ) const;
+
+      void YUV2RGB ( const xn::ImageMetaData& yuv, sensor_msgs::Image& image ) const;
+      void YUV2Gray ( const xn::ImageMetaData& yuv, sensor_msgs::Image& image ) const;
+      
       /** \brief A copy of the communication NodeHandle. */
       ros::NodeHandle comm_nh_;
       ros::NodeHandle param_nh_;
@@ -143,7 +146,7 @@ namespace openni_camera
       /** \brief focal length in pixels for the IR camera in VGA resolution*/
       XnUInt64 depth_focal_length_VGA_;
       
-      /** the value for shadow (not occluded) pixels*/
+      /** the value for shadow (occluded pixels) */
       XnUInt64 shadow_value_;
 
       /** the value for pixels without a valid disparity measurement */
@@ -160,6 +163,7 @@ namespace openni_camera
       sensor_msgs::CameraInfo depth_info_, rgb_info_;
       /** \brief Disparity Image */
       stereo_msgs::DisparityImage disp_image_;
+
 
       /** \brief Callback for dynamic_reconfigure */
       void configCb (Config &config, uint32_t level);
@@ -178,6 +182,12 @@ namespace openni_camera
       
       /** \brief frames per second for depth stream */
       static const unsigned depth_stream_fps = 30;
+      
+      /** \brief frame_id of rgb camera coordinate system */
+      static const std::string rgb_frame_id_;
+
+      /** \brief frame_id of IR camera coordinate system */
+      static const std::string IR_frame_id_;
   };
 
   bool OpenNIDriver::isRGBRequired() const

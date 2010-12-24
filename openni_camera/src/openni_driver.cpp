@@ -44,14 +44,12 @@
 #include <sensor_msgs/image_encodings.h>
 #include <sensor_msgs/fill_image.h>
 #include <boost/make_shared.hpp>
-#include <vector>
 
 // Branch on whether we have the changes to CameraInfo in unstable
 #if ROS_VERSION_MINIMUM(1, 3, 0)
 #include <sensor_msgs/distortion_models.h>
 #endif
 
-#define BORDER_HANDLING true
 using namespace std;
 
 namespace openni_camera 
@@ -59,6 +57,8 @@ namespace openni_camera
 
 // Suat: This magic number is the focal length of the RGB camera and comes from our Primesense/Kinect calibration routine.
 const double OpenNIDriver::rgb_focal_length_VGA_ = 525;
+const string OpenNIDriver::rgb_frame_id_ = "openni_rgb_optical_frame";
+const string OpenNIDriver::IR_frame_id_ = "openni_depth_optical_frame";
 
 typedef union
 {
@@ -84,7 +84,6 @@ OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
 {
   // Init the OpenNI context
   XnStatus status = context_.Init ();
-
   if (status != XN_STATUS_OK)
   {
     ROS_ERROR ("[OpenNIDriver] Init: %s", xnGetStatusString (status));
@@ -95,20 +94,11 @@ OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   ReconfigureServer::CallbackType f = boost::bind(&OpenNIDriver::configCb, this, _1, _2);
   reconfigure_server_.setCallback(f);
   
-  // Set the frame IDs. The optical frames are all Z-forward.
-  std::string openni_depth_frame, openni_RGB_frame;
-  param_nh.param ("openni_depth_optical_frame", openni_depth_frame,
-                  std::string ("/openni_depth_optical_frame"));
-  param_nh.param ("openni_rgb_optical_frame", openni_RGB_frame,
-                  std::string ("/openni_rgb_optical_frame"));
-  
-  cloud2_.header.frame_id = openni_depth_frame;  
-  disp_image_.header.frame_id = openni_depth_frame;
-  disp_image_.image.encoding = "32FC1";
-  /// @todo IR (when we support it) is the same as the depth frame.  
-
-  rgb_image_ .header.frame_id = openni_RGB_frame;
-  gray_image_.header.frame_id = openni_RGB_frame;
+  // set frame id of images that do not change their coordinate system!
+  // other than unregistered images, clouds etc registered are in the rgb_frame
+  rgb_image_.header.frame_id  = rgb_frame_id_;
+  gray_image_.header.frame_id = rgb_frame_id_;
+  rgb_info_.header.frame_id   = rgb_frame_id_;
 
   // Publishers and subscribers
   image_transport::ImageTransport it(comm_nh);
@@ -123,8 +113,7 @@ OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   /// @todo Set inter-message lower bound, age penalty, max interval to lower latency
   // Connect no inputs, we'll add messages manually
   depth_rgb_sync_.reset( new Synchronizer(sync_policy) );
-  depth_rgb_sync_->registerCallback(boost::bind(&OpenNIDriver::publishXYZRGBPointCloud,
-                                                this, _1, _2));
+  depth_rgb_sync_->registerCallback(boost::bind(&OpenNIDriver::publishXYZRGBPointCloud, this, _1, _2));
 }
 
 /** \brief Destructor */
@@ -242,27 +231,25 @@ void OpenNIDriver::processDepth ()
   // Disparity image
   if (pub_disparity_.getNumSubscribers () > 0)
   {
-    disp_image_.header.stamp = time;
-    publishDisparity ( depth_md );
+    publishDisparity ( depth_md, time );
   }
 
   // Point cloud
   if (pub_depth_points2_.getNumSubscribers() > 0 )
   {
-    cloud2_.header.stamp = time;
-
     if (config_.point_cloud_type == OpenNI_XYZRGB)
     {
       sensor_msgs::ImagePtr depth_ptr = boost::make_shared<sensor_msgs::Image>();
       depth_ptr->header.stamp = time;
       depth_ptr->header.frame_id = disp_image_.header.frame_id;
+      depth_ptr->header.seq = depth_md.FrameID();
       sensor_msgs::fillImage(*depth_ptr, sensor_msgs::image_encodings::TYPE_16UC1,
                              depth_md.YRes(), depth_md.XRes(), depth_md.XRes() * sizeof(uint16_t),
                              (void*)depth_md.Data());
       depth_rgb_sync_->add<0>(depth_ptr);
     }
     else
-      publishXYZPointCloud(depth_md);
+      publishXYZPointCloud(depth_md, time);
   }
 }
 
@@ -273,29 +260,42 @@ void OpenNIDriver::processRgb ()
   
   xn::ImageMetaData image_md;
   image_generator_.GetMetaData( image_md );
-
+  
   if (pub_bayer_.getNumSubscribers() > 0)
   {
-    sensor_msgs::ImagePtr bayer_ptr = boost::make_shared<sensor_msgs::Image>();
-    bayer_ptr->header.stamp = time;
-    bayer_ptr->header.frame_id = rgb_info_.header.frame_id;
-    sensor_msgs::fillImage(*bayer_ptr, sensor_msgs::image_encodings::BAYER_GRBG8,
-                           image_md.YRes(), image_md.XRes(), image_md.XRes(),
-                           (void*)image_md.Data());
-    pub_bayer_.publish(bayer_ptr);
+    if (config_.device_type == OpenNI_Kinect)
+    {
+      sensor_msgs::ImagePtr bayer_ptr = boost::make_shared<sensor_msgs::Image>();
+      bayer_ptr->header.stamp = time;
+      bayer_ptr->header.seq   = image_md.FrameID();
+      bayer_ptr->header.frame_id = rgb_frame_id_;
+      sensor_msgs::fillImage(*bayer_ptr, sensor_msgs::image_encodings::BAYER_GRBG8,
+                             image_md.YRes(), image_md.XRes(), image_md.XRes(),
+                             (void*)image_md.Data());
+      pub_bayer_.publish(bayer_ptr);
+    }
+    else
+    {
+      ROS_WARN("[OpenNIDriver] : no bayer image available for primesense device" );
+    }
   }
 
   if (isRGBRequired())
   {
     rgb_image_.header.stamp = rgb_info_.header.stamp = time;
+    rgb_image_.header.seq   = rgb_info_.header.seq   = image_md.FrameID();
 
-    bayer2RGB( image_md, rgb_image_, config_.Debayering );
+    if( config_.device_type == OpenNI_Primesense )
+      YUV2RGB( image_md, rgb_image_ );
+    else if( config_.device_type == OpenNI_Kinect )
+      bayer2RGB( image_md, rgb_image_, config_.Debayering );
+    else
+      ROS_ERROR("[OpenNIDriver::processRgb] unknown device type");
 
     sensor_msgs::ImageConstPtr rgb_ptr = boost::make_shared<const sensor_msgs::Image> (rgb_image_);
     if (pub_rgb_.getNumSubscribers() > 0)
     {
-      pub_rgb_.publish (rgb_ptr,
-                        boost::make_shared<const sensor_msgs::CameraInfo> (rgb_info_));
+      pub_rgb_.publish (rgb_ptr, boost::make_shared<const sensor_msgs::CameraInfo> (rgb_info_));
     }
 
     if (pub_depth_points2_.getNumSubscribers() > 0 && config_.point_cloud_type == OpenNI_XYZRGB)
@@ -305,10 +305,15 @@ void OpenNIDriver::processRgb ()
   if (isGrayRequired())
   {
     gray_image_.header.stamp = rgb_info_.header.stamp = time;
-    gray_image_.header.seq = image_generator_.GetFrameID ();
+    gray_image_.header.seq   = rgb_info_.header.seq   = image_md.FrameID ();
 
-    bayer2Gray( image_md, gray_image_, config_.Debayering );
-
+    if( config_.device_type == OpenNI_Primesense )
+      YUV2Gray( image_md, gray_image_ );
+    else if( config_.device_type == OpenNI_Kinect )
+      bayer2Gray( image_md, gray_image_ );
+    else
+      ROS_ERROR("[OpenNIDriver::processRgb] unknown device type");
+    
     if (pub_gray_.getNumSubscribers() > 0)
     {
       pub_gray_.publish (boost::make_shared<const sensor_msgs::Image> (gray_image_),
@@ -317,12 +322,13 @@ void OpenNIDriver::processRgb ()
   }
 }
 
-void OpenNIDriver::publishDepthImage ( const xn::DepthMetaData& depth_md, ros::Time time ) const
+void OpenNIDriver::publishDepthImage ( const xn::DepthMetaData& depth_md, ros::Time time )
 {
   /// @todo Disentangle this from disparity image values
   sensor_msgs::ImagePtr msg_ptr = boost::make_shared<sensor_msgs::Image> ();
   msg_ptr->header.stamp = time;
   msg_ptr->header.frame_id = disp_image_.header.frame_id; /// @todo Depends on registration
+  msg_ptr->header.seq = depth_md.FrameID();
   msg_ptr->height = disp_image_.image.height;
   msg_ptr->width  = disp_image_.image.width;
   msg_ptr->encoding = sensor_msgs::image_encodings::TYPE_32FC1;
@@ -351,14 +357,12 @@ void OpenNIDriver::publishDepthImage ( const xn::DepthMetaData& depth_md, ros::T
     }
   }
 
-  // Corresponding camera info depends on whether the depths are registered to the RGB image
-  if (config_.point_cloud_type == OpenNI_XYZRGB)
-    pub_depth_image_.publish (msg_ptr, boost::make_shared<const sensor_msgs::CameraInfo> (rgb_info_));
-  else
-    pub_depth_image_.publish (msg_ptr, boost::make_shared<const sensor_msgs::CameraInfo> (depth_info_));
+  depth_info_.header.seq = depth_md.FrameID();
+  depth_info_.header.stamp = time;
+  pub_depth_image_.publish (msg_ptr, boost::make_shared<const sensor_msgs::CameraInfo> (depth_info_));
 }
 
-void OpenNIDriver::publishDisparity ( const xn::DepthMetaData& depth_md )
+void OpenNIDriver::publishDisparity ( const xn::DepthMetaData& depth_md, ros::Time time )
 {
   unsigned xStep = depth_stream_width / disp_image_.image.width;
   unsigned ySkip = (depth_stream_height / disp_image_.image.height - 1) * depth_stream_width;
@@ -388,10 +392,12 @@ void OpenNIDriver::publishDisparity ( const xn::DepthMetaData& depth_md )
   }
   
   // Publish disparity Image
+  disp_image_.header.stamp = time;
+  disp_image_.header.seq = depth_md.FrameID();
   pub_disparity_.publish ( disp_image_ );
 }
 
-void OpenNIDriver::publishXYZPointCloud ( const xn::DepthMetaData& depth_md )
+void OpenNIDriver::publishXYZPointCloud ( const xn::DepthMetaData& depth_md, ros::Time time )
 {
   float bad_point = std::numeric_limits<float>::quiet_NaN ();
   int depth_idx = 0;
@@ -433,7 +439,9 @@ void OpenNIDriver::publishXYZPointCloud ( const xn::DepthMetaData& depth_md )
     }
   }
 
-  /// @todo Depth frame here
+  cloud2_.header.frame_id = disp_image_.header.frame_id;
+  cloud2_.header.seq = depth_md.FrameID();
+  cloud2_.header.stamp = time;
   pub_depth_points2_.publish (boost::make_shared<const sensor_msgs::PointCloud2> (cloud2_));
 }
 
@@ -497,16 +505,27 @@ void OpenNIDriver::publishXYZRGBPointCloud ( const sensor_msgs::ImageConstPtr& d
   }
 
   /// @todo RGB frame here
+
+  cloud2_.header.stamp = max( depth_msg->header.stamp, rgb_msg->header.stamp );
+  cloud2_.header.frame_id = rgb_msg->header.frame_id;
+  cloud2_.header.seq = max( depth_msg->header.seq, rgb_msg->header.seq );
   pub_depth_points2_.publish (boost::make_shared<const sensor_msgs::PointCloud2> (cloud2_));
 }
 
 void OpenNIDriver::configCb (Config &config, uint32_t level)
 {
-  // if our pointcloud is VGA and XYZRGB -> we need at least VGA resolution for image
-  if( config.point_cloud_resolution > config.image_resolution && config.point_cloud_type )
+  // highres images for the primesense device are not supported yet => fall back to VGA
+  if (config.device_type == OpenNI_Primesense && config.image_resolution == OpenNI_SXGA_15Hz)
+  {
+    config.image_resolution = OpenNI_VGA_30Hz;
+  }
+
+  // if our pointcloud is XYZRGB then the image resolution must be at least the same as the point cloud resolution
+  if (config.point_cloud_resolution > config.image_resolution && config.point_cloud_type)
   {
     config.image_resolution = config.point_cloud_resolution;
   }
+
   config_ = config;
   updateDeviceSettings();
 }
@@ -516,30 +535,25 @@ bool OpenNIDriver::updateDeviceSettings()
   unsigned image_width, image_height;
   unsigned stream_width, stream_height, stream_fps;
 
+  stream_width   = XN_VGA_X_RES;
+  stream_height  = XN_VGA_Y_RES;
+  stream_fps     = 30;
+
   switch( config_.image_resolution )
   {
     case OpenNI_QQVGA_30Hz:
-            stream_width   = 640;
-            stream_height  = 480;
-            stream_fps     = 30;
             image_width    = 160;
             image_height   = 120;
       break;
 
     case OpenNI_QVGA_30Hz:
-            stream_width   = 640;
-            stream_height  = 480;
-            stream_fps     = 30;
             image_width    = 320;
             image_height   = 240;
       break;
 
     case OpenNI_VGA_30Hz:
-            stream_width   = 640;
-            stream_height  = 480;
-            stream_fps     = 30;
-            image_width    = 640;
-            image_height   = 480;
+            image_width    = XN_VGA_X_RES;
+            image_height   = XN_VGA_Y_RES;
       break;
 
     case OpenNI_SXGA_15Hz:
@@ -551,11 +565,8 @@ bool OpenNIDriver::updateDeviceSettings()
       break;
 
     default:ROS_WARN("Unknwon image resolution - falling back to VGA@30Hz");
-            stream_width   = 640;
-            stream_height  = 480;
-            stream_fps     = 30;
-            image_width    = 640;
-            image_height   = 480;
+            image_width    = XN_VGA_X_RES;
+            image_height   = XN_VGA_Y_RES;
       break;
   }
 
@@ -572,13 +583,13 @@ bool OpenNIDriver::updateDeviceSettings()
             break;
 
     case OpenNI_VGA_30Hz:
-            cloud2_.height = 480;
-            cloud2_.width  = 640;
+            cloud2_.height = XN_VGA_Y_RES;
+            cloud2_.width  = XN_VGA_X_RES;
             break;
             
     default: ROS_WARN("Unknwon point cloud size - falling back to VGA");
-            cloud2_.height = 480;
-            cloud2_.width  = 640;
+            cloud2_.height = XN_VGA_Y_RES;
+            cloud2_.width  = XN_VGA_X_RES;
             break;
   }
 
@@ -633,8 +644,8 @@ bool OpenNIDriver::updateDeviceSettings()
       break;
 
     default: ROS_WARN("Unknwon disparity resolution - falling back to VGA");
-        disp_image_.image.height = 480;
-        disp_image_.image.width = 640;
+        disp_image_.image.height = XN_VGA_Y_RES;
+        disp_image_.image.width = XN_VGA_X_RES;
       break;
   }
   
@@ -734,6 +745,7 @@ bool OpenNIDriver::updateDeviceSettings()
   depth_info_.P[10]   = 1.0;
   depth_info_.width   = disp_image_.image.width;
   depth_info_.height  = disp_image_.image.height;
+  depth_info_.header.frame_id = IR_frame_id_;
 
   // got baseline update disparity image
   disp_image_.T = baseline_;
@@ -790,28 +802,45 @@ bool OpenNIDriver::updateDeviceSettings()
     return (false);
   }
 
-  // InputFormat should be 6 for Kinect, 5 for PS
-  int image_input_format = 5;
-  if (param_nh_.getParam ("image_input_format", image_input_format))
+  if( config_.device_type == OpenNI_Primesense )
   {
-    if (image_generator_.SetIntProperty ("InputFormat", image_input_format) != XN_STATUS_OK)
+    // 5 => YUV422
+    if (image_generator_.SetIntProperty ("InputFormat", 5) != XN_STATUS_OK)
       ROS_ERROR ("[OpenNIDriver] Error setting the image input format to Uncompressed 8-bit BAYER!");
-  }
-  /*
-  // RegistrationType should be 2 (software) for Kinect, 1 (hardware) for PS
-  int registration_type = 0;
-  if (param_nh_.getParam ("registration_type", registration_type))
-  {
-    if (depth_generator_.SetIntProperty ("RegistrationType", registration_type) != XN_STATUS_OK)
-      ROS_WARN ("[OpenNIDriver] Error enabling registration!");
-  }
 
-  if (image_generator_.SetPixelFormat(XN_PIXEL_FORMAT_GRAYSCALE_8_BIT )!= XN_STATUS_OK)
+    // RegistrationType should be 2 (software) for Kinect, 1 (hardware) for PS
+    if (depth_generator_.SetIntProperty ("RegistrationType", 1) != XN_STATUS_OK)
+      ROS_WARN ("[OpenNIDriver] Error enabling registration!");
+
+    if (image_generator_.SetPixelFormat(XN_PIXEL_FORMAT_YUV422 )!= XN_STATUS_OK)
+    {
+      ROS_ERROR("[OpenNIDriver] Failed to set image pixel format to YUV422");
+      return (false);
+    }
+  }
+  else if( config_.device_type == OpenNI_Kinect )
   {
-    ROS_ERROR("[OpenNIDriver] Failed to set image pixel format");
+    // InputFormat should be 6 = uncompressed Bayer for Kinect
+    if (image_generator_.SetIntProperty ("InputFormat", 6) != XN_STATUS_OK)
+      ROS_ERROR ("[OpenNIDriver] Error setting the image input format to Uncompressed 8-bit BAYER!");
+
+    // RegistrationType should be 2 (software) for Kinect, 1 (hardware) for PS
+    if (depth_generator_.SetIntProperty ("RegistrationType", 2) != XN_STATUS_OK)
+      ROS_WARN ("[OpenNIDriver] Error enabling registration!");
+
+    // Grayscale: bypass debayering -> gives us bayer pattern!
+    if (image_generator_.SetPixelFormat(XN_PIXEL_FORMAT_GRAYSCALE_8_BIT )!= XN_STATUS_OK)
+    {
+      ROS_ERROR("[OpenNIDriver] Failed to set image pixel format to 8bit-grayscale");
+      return (false);
+    }
+  }
+  else
+  {
+    ROS_ERROR("[OpenNIDriver] unknown device type");
     return (false);
   }
-//*/
+
   if (config_.point_cloud_type == OpenNI_XYZ_unregistered) // not registered pc
   {
     status = depth_generator_.GetAlternativeViewPointCap().ResetViewPoint();
@@ -820,6 +849,9 @@ bool OpenNIDriver::updateDeviceSettings()
       ROS_ERROR ("[OpenNIDriver::spin] Error in switching off registering on depth stream: %s", xnGetStatusString (status));
       return (false);
     }
+
+    // unregistered -> all depth information are in the IR camera coordinate system
+    disp_image_.header.frame_id = IR_frame_id_;
   }
   else
   {
@@ -829,14 +861,16 @@ bool OpenNIDriver::updateDeviceSettings()
       ROS_ERROR ("[OpenNIDriver::spin] Error in switching on depth stream registration: %s", xnGetStatusString (status));
       return (false);
     }
-    // point clouds and disparity images are now transformed to the RGB camera coordinate frame
+
+    // registered => all depth information are in the RGB camera coordinate system, as well as the camera parameters from RGB are valid for the depth image
     depth_info_ = rgb_info_;
+    disp_image_.header.frame_id = rgb_frame_id_;
   }
 
   return true;
 }
 
-void OpenNIDriver::bayer2RGB ( const xn::ImageMetaData& bayer, sensor_msgs::Image& image, int method )
+void OpenNIDriver::bayer2RGB ( const xn::ImageMetaData& bayer, sensor_msgs::Image& image, int method ) const
 {
   if (bayer.XRes() == image.width && bayer.YRes() == image.height)
   {
@@ -851,7 +885,6 @@ void OpenNIDriver::bayer2RGB ( const xn::ImageMetaData& bayer, sensor_msgs::Imag
 
     if (method == OpenNI_Bilinear)
     {
-#if BORDER_HANDLING
       // first two pixel values for first two lines
       // Bayer         0 1 2
       //         0     G r g
@@ -964,14 +997,10 @@ void OpenNIDriver::bayer2RGB ( const xn::ImageMetaData& bayer, sensor_msgs::Imag
 
       bayer_pixel += line_step + 2;
       rgb_pixel += rgb_line_step + 6;
-#else
-       bayer_pixel += line_step2;
-       rgb_pixel += rgb_line_step2;
-#endif
+
       // main processing
       for (yIdx = 2; yIdx < image.height-2; yIdx += 2)
       {
-#if BORDER_HANDLING
         // first two pixel values
         // Bayer         0 1 2
         //        -1     b g b
@@ -1008,7 +1037,7 @@ void OpenNIDriver::bayer2RGB ( const xn::ImageMetaData& bayer, sensor_msgs::Imag
         //rgb_pixel[rgb_line_step + 3] = AVG( bayer_pixel[1] , bayer_pixel[line_step2+1] );
         rgb_pixel[rgb_line_step + 4] = bayer_pixel[line_step+1];
         rgb_pixel[rgb_line_step + 5] = AVG( bayer_pixel[line_step] , bayer_pixel[line_step+2] );
-#endif
+
         rgb_pixel += 6;
         bayer_pixel += 2;
         // continue with rest of the line
@@ -1052,7 +1081,7 @@ void OpenNIDriver::bayer2RGB ( const xn::ImageMetaData& bayer, sensor_msgs::Imag
           rgb_pixel[rgb_line_step + 4] = bayer_pixel[line_step+1];
           rgb_pixel[rgb_line_step + 5] = AVG( bayer_pixel[line_step] , bayer_pixel[line_step+2] );
         }
-#if BORDER_HANDLING
+
         // last two pixels of the line
         // last two pixel values for first two lines
         // GRGR line
@@ -1088,11 +1117,11 @@ void OpenNIDriver::bayer2RGB ( const xn::ImageMetaData& bayer, sensor_msgs::Imag
         rgb_pixel[rgb_line_step + 3] = AVG( bayer_pixel[1] , bayer_pixel[line_step2+1] );
         rgb_pixel[rgb_line_step + 4] = bayer_pixel[line_step+1];
         //rgb_pixel[rgb_line_step + 5] = bayer_pixel[line_step];
-#endif
+
         bayer_pixel += line_step + 2;
         rgb_pixel += rgb_line_step + 6;
       }
-#if BORDER_HANDLING
+
       //last two lines
       // Bayer         0 1 2
       //        -1     b g b
@@ -1203,12 +1232,11 @@ void OpenNIDriver::bayer2RGB ( const xn::ImageMetaData& bayer, sensor_msgs::Imag
       //rgb_pixel[rgb_line_step + 3] = bayer_pixel[1];
       rgb_pixel[rgb_line_step + 4] = bayer_pixel[line_step+1];
       //rgb_pixel[rgb_line_step + 5] = bayer_pixel[line_step];
-#endif
     }
     else if (method == OpenNI_EdgeAware)
     {
       int dh, dv;
-#if BORDER_HANDLING
+
       // first two pixel values for first two lines
       // Bayer         0 1 2
       //         0     G r g
@@ -1321,14 +1349,9 @@ void OpenNIDriver::bayer2RGB ( const xn::ImageMetaData& bayer, sensor_msgs::Imag
 
       bayer_pixel += line_step + 2;
       rgb_pixel += rgb_line_step + 6;
-#else
-       bayer_pixel += line_step2;
-       rgb_pixel += rgb_line_step2;
-#endif
       // main processing
       for (yIdx = 2; yIdx < image.height-2; yIdx += 2)
       {
-#if BORDER_HANDLING
         // first two pixel values
         // Bayer         0 1 2
         //        -1     b g b
@@ -1365,7 +1388,7 @@ void OpenNIDriver::bayer2RGB ( const xn::ImageMetaData& bayer, sensor_msgs::Imag
         //rgb_pixel[rgb_line_step + 3] = AVG( bayer_pixel[1] , bayer_pixel[line_step2+1] );
         rgb_pixel[rgb_line_step + 4] = bayer_pixel[line_step+1];
         rgb_pixel[rgb_line_step + 5] = AVG( bayer_pixel[line_step] , bayer_pixel[line_step+2] );
-#endif
+
         rgb_pixel += 6;
         bayer_pixel += 2;
         // continue with rest of the line
@@ -1428,7 +1451,7 @@ void OpenNIDriver::bayer2RGB ( const xn::ImageMetaData& bayer, sensor_msgs::Imag
           rgb_pixel[rgb_line_step + 4] = bayer_pixel[line_step+1];
           rgb_pixel[rgb_line_step + 5] = AVG( bayer_pixel[line_step] , bayer_pixel[line_step+2] );
         }
-#if BORDER_HANDLING
+
         // last two pixels of the line
         // last two pixel values for first two lines
         // GRGR line
@@ -1464,11 +1487,11 @@ void OpenNIDriver::bayer2RGB ( const xn::ImageMetaData& bayer, sensor_msgs::Imag
         rgb_pixel[rgb_line_step + 3] = AVG( bayer_pixel[1] , bayer_pixel[line_step2+1] );
         rgb_pixel[rgb_line_step + 4] = bayer_pixel[line_step+1];
         //rgb_pixel[rgb_line_step + 5] = bayer_pixel[line_step];
-#endif
+
         bayer_pixel += line_step + 2;
         rgb_pixel += rgb_line_step + 6;
       }
-#if BORDER_HANDLING
+
       //last two lines
       // Bayer         0 1 2
       //        -1     b g b
@@ -1579,7 +1602,6 @@ void OpenNIDriver::bayer2RGB ( const xn::ImageMetaData& bayer, sensor_msgs::Imag
       //rgb_pixel[rgb_line_step + 3] = bayer_pixel[1];
       rgb_pixel[rgb_line_step + 4] = bayer_pixel[line_step+1];
       //rgb_pixel[rgb_line_step + 5] = bayer_pixel[line_step];
-#endif
     }
     else
     {
@@ -1608,7 +1630,7 @@ void OpenNIDriver::bayer2RGB ( const xn::ImageMetaData& bayer, sensor_msgs::Imag
   }
 }
 
-void OpenNIDriver::bayer2Gray ( const xn::ImageMetaData& bayer, sensor_msgs::Image& image, int method )
+void OpenNIDriver::bayer2Gray ( const xn::ImageMetaData& bayer, sensor_msgs::Image& image, int method ) const
 {
   if (bayer.XRes() == image.width && bayer.YRes() == image.height)
   {
@@ -1755,4 +1777,63 @@ void OpenNIDriver::bayer2Gray ( const xn::ImageMetaData& bayer, sensor_msgs::Ima
     }
   } // downsampling
 }
+
+void OpenNIDriver::YUV2RGB ( const xn::ImageMetaData& yuv, sensor_msgs::Image& image ) const
+{
+  // u y1 v y2
+  register const XnUInt8* yuv_buffer = yuv.Data();
+  register unsigned char* rgb_buffer = (unsigned char*)&image.data[0];
+
+  if (yuv.XRes() == image.width && yuv.YRes() == image.height)
+  {
+    for( register unsigned yIdx = 0; yIdx < yuv.YRes(); ++yIdx )
+    {
+      for( register unsigned xIdx = 0; xIdx < yuv.XRes(); xIdx += 2, rgb_buffer += 6, yuv_buffer += 4 )
+      {
+        rgb_buffer[0] = max (0, min (255, (int)yuv_buffer[1] + (int)(1.13983 * (float)(yuv_buffer[2]-128) ) ) );
+        rgb_buffer[1] = max (0, min (255, (int)yuv_buffer[1] + (int)(124.832 -0.39465 * (float)yuv_buffer[0] - 0.58060 * (float)yuv_buffer[2] )));
+        rgb_buffer[2] = max (0, min (255, (int)yuv_buffer[1] + (int)(2.03211 * (float)(yuv_buffer[0]-128)) ) );
+
+        rgb_buffer[3] = max (0, min (255, (int)yuv_buffer[3] + (int)(1.13983 * (float)(yuv_buffer[2]-128) ) ) );
+        rgb_buffer[4] = max (0, min (255, (int)yuv_buffer[3] + (int)(124.832 -0.39465 * (float)yuv_buffer[0] - 0.58060 * (float)yuv_buffer[2] )));
+        rgb_buffer[5] = max (0, min (255, (int)yuv_buffer[3] + (int)(2.03211 * (float)(yuv_buffer[0]-128)) ) );
+      }
+    }
+  }
+  else
+  {
+    register unsigned yuv_step = yuv.XRes() / image.width;
+    register unsigned yuv_x_step = yuv_step << 1;
+    register unsigned yuv_skip = (yuv.YRes() / image.height - 1) * ( yuv.XRes() << 1 );
+    for( register unsigned yIdx = 0; yIdx < yuv.YRes(); yIdx += yuv_step, yuv_buffer += yuv_skip )
+    {
+      for( register unsigned xIdx = 0; xIdx < yuv.XRes(); xIdx += yuv_step, rgb_buffer += 3, yuv_buffer += yuv_x_step )
+      {
+        rgb_buffer[0] = max (0, min (255, (int)yuv_buffer[1] + (int)(1.13983 * (float)(yuv_buffer[2]-128) ) ) );
+        rgb_buffer[1] = max (0, min (255, (int)yuv_buffer[1] + (int)(124.832 -0.39465 * (float)yuv_buffer[0] - 0.58060 * (float)yuv_buffer[2] )));
+        rgb_buffer[2] = max (0, min (255, (int)yuv_buffer[1] + (int)(2.03211 * (float)(yuv_buffer[0]-128)) ) );
+      }
+    }
+  }
+}
+
+void OpenNIDriver::YUV2Gray ( const xn::ImageMetaData& yuv, sensor_msgs::Image& image ) const
+{
+  // u y1 v y2
+
+  register unsigned yuv_step = yuv.XRes() / image.width;
+  register unsigned yuv_x_step = yuv_step << 1;
+  register unsigned yuv_skip = (yuv.YRes() / image.height - 1) * ( yuv.XRes() << 1 );
+  register const XnUInt8* yuv_buffer = (yuv.Data() + 1);
+  register unsigned char* gray_buffer = (unsigned char*)&image.data[0];
+
+  for( register unsigned yIdx = 0; yIdx < yuv.YRes(); yIdx += yuv_step, yuv_buffer += yuv_skip )
+  {
+    for( register unsigned xIdx = 0; xIdx < yuv.XRes(); xIdx += yuv_step, ++gray_buffer, yuv_buffer += yuv_x_step )
+    {
+      *gray_buffer = *yuv_buffer;
+    }
+  }
+}
+
 } // namespace openni_camera
