@@ -93,11 +93,11 @@ namespace openni_camera
       void publishDisparity ( const xn::DepthMetaData& depth_md, ros::Time time );
 
       /** \brief Process unregistered depth data into point cloud message and publish. */
-      void publishXYZPointCloud ( const xn::DepthMetaData& depth_md, ros::Time time );
+      void publishXYZPointCloud ( const xn::DepthMetaData& depth_md, ros::Time time ) const;
 
       /** \brief Process synchronized depth and color images into XYZRGB point cloud and publish. */
       void publishXYZRGBPointCloud ( const sensor_msgs::ImageConstPtr& depth_msg,
-                                     const sensor_msgs::ImageConstPtr& rgb_msg );
+                                     const sensor_msgs::ImageConstPtr& rgb_msg ) const;
     
       /** \brief An OpenNI context object. */
       xn::Context context_;
@@ -123,7 +123,7 @@ namespace openni_camera
       ros::NodeHandle param_nh_;
 
       /** \brief ROS publishers. */
-      image_transport::Publisher pub_bayer_;
+      //image_transport::Publisher pub_bayer_;
       image_transport::CameraPublisher pub_rgb_, pub_gray_;
       image_transport::CameraPublisher pub_depth_image_;
       ros::Publisher pub_disparity_;
@@ -204,7 +204,7 @@ namespace openni_camera
 
   bool OpenNIDriver::isImageStreamRequired() const
   {
-    return ( pub_bayer_.getNumSubscribers() > 0 || isRGBRequired() || isGrayRequired() );
+    return ( /*pub_bayer_.getNumSubscribers() > 0 || */ isRGBRequired() || isGrayRequired() );
   }
 
   bool OpenNIDriver::isDepthStreamRequired() const
