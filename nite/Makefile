@@ -62,7 +62,7 @@ $(INSTALL_DIR)/installed: $(SOURCE_DIR)/unpacked
 	@-sed -Ei -e 's/<MapOutputMode xRes="320" yRes="240" FPS="30"\/>/<MapOutputMode xRes="640" yRes="480" FPS="30"\/>/g' lib/Sample-User.xml
 	@-sed -Ei -e 's/<MapOutputMode xRes="320" yRes="240" FPS="30"\/>/<MapOutputMode xRes="640" yRes="480" FPS="30"\/>/g' lib/Sample-Scene.xml
 	@-sed -Ei -e 's/<MapOutputMode xRes="320" yRes="240" FPS="30"\/>/<MapOutputMode xRes="640" yRes="480" FPS="30"\/>/g' lib/Sample-Tracking.xml
-	cd $(SOURCE_DIR)/; make INC_DIRS="$(shell rospack find openni)/include/ni $(shell rospack find nite)/include/nite" LIB_DIRS_OPTION="-L$(shell rospack find openni)/lib/ -L$(shell rospack find nite)/lib -Xlinker -R$(shell rospack find openni)/lib/ -Xlinker -R$(shell rospack find nite)/lib/"
+	cd $(SOURCE_DIR)/; make INC_DIRS="$(shell rospack find openni)/include/ni $(shell rospack find nite)/include/nite" LIB_DIRS_OPTION="-L$(shell rospack find openni)/lib/ -L$(shell rospack find nite)/lib -lGL -lrt -lpthread -Xlinker -R$(shell rospack find openni)/lib/ -Xlinker -R$(shell rospack find nite)/lib/"
 	mkdir -p $(INSTALL_DIR)/bin
 	cp $(SOURCE_DIR)/Samples/Bin/* $(INSTALL_DIR)/bin
 	touch $(INSTALL_DIR)/installed
