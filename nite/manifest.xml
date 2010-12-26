@@ -8,6 +8,11 @@
   <license>BSD</license>
   <review status="unreviewed" notes=""/>
   <url>http://ros.org/wiki/nite</url>
+
+  <export>
+    <cpp cflags="-I${prefix}/include/nite" lflags="-Wl,-rpath,${prefix}/lib -L${prefix}/lib -lXnVNite" />
+  </export>
+
   <depend package="openni" />
 
 
