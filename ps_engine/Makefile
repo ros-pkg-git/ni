@@ -22,13 +22,13 @@ installed: $(GIT_DIR)
 		cd -
 	@echo "### Patching the output library for the core libraries..."
 	@cd $(GIT_DIR)/Platform/$(PLATFORM)/Build && \
-		sed -Ei -e 's/BIN_DIR = ..\/..\/Bin/CFG=lib\nCFLAGS+=-O3 -msse3\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB) -Wl,-rpath,$(ENGINE_LIB)\nLIB_DIRS=$(OPENNI_LIB)\nBIN_DIR=$(ENGINE)/g' EngineLibMakefile && \
+		sed -Ei -e 's/BIN_DIR = ..\/..\/Bin/CFG=lib\nCFLAGS+=-O3 -msse2\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB) -Wl,-rpath,$(ENGINE_LIB)\nLIB_DIRS=$(OPENNI_LIB)\nBIN_DIR=$(ENGINE)/g' EngineLibMakefile && \
 		sed -Ei -e 's/\/usr\/include\/ni\/CommonMakefile/$(OPENNI_INCLUDE)\/ni\/CommonMakefile/g' EngineLibMakefile && \
 		sed -Ei -e 's/\/usr\/include/$(OPENNI_INCLUDE)/g' EngineLibMakefile && \
 		cd -
 	@echo "### Patching the output library for XnServer..."
 	@cd $(GIT_DIR)/Platform/$(PLATFORM)/Build/Utils && \
-		sed -Ei -e 's/BIN_DIR = ..\/..\/..\/Bin/CFG=bin\nCFLAGS+=-O3 -msse3\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB) -Wl,-rpath,$(ENGINE_LIB)\nLIB_DIRS=$(OPENNI_LIB) $(ENGINE_LIB)\nBIN_DIR=$(ENGINE)/g' EngineUtilMakefile && \
+		sed -Ei -e 's/BIN_DIR = ..\/..\/..\/Bin/CFG=bin\nCFLAGS+=-O3 -msse2\nLDFLAGS+=-Wl,-rpath,$(OPENNI_LIB) -Wl,-rpath,$(ENGINE_LIB)\nLIB_DIRS=$(OPENNI_LIB) $(ENGINE_LIB)\nBIN_DIR=$(ENGINE)/g' EngineUtilMakefile && \
 		sed -Ei -e 's/\/usr\/include\/ni\/CommonMakefile/$(OPENNI_INCLUDE)\/ni\/CommonMakefile/g' EngineUtilMakefile && \
 		sed -Ei -e 's/\/usr\/include/$(OPENNI_INCLUDE)/g' EngineUtilMakefile && \
 		cd -
