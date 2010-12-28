@@ -64,6 +64,7 @@
 #define AVG(a,b) (((int)(a) + (int)(b)) >> 1)
 #define AVG3(a,b,c) (((int)(a) + (int)(b) + (int)(c)) / 3)
 #define AVG4(a,b,c,d) (((int)(a) + (int)(b) + (int)(c) + (int)(d)) >> 2)
+#define WAVG4(a,b,c,d,x,y)  ( ( ((int)(a) + (int)(b)) * (int)(x) + ((int)(c) + (int)(d)) * (int)(y) ) / ( 2 * ((int)(x) + (int(y))) ) )
 
 namespace openni_camera
 {
@@ -112,8 +113,8 @@ namespace openni_camera
       inline bool isImageStreamRequired () const;
       inline bool isDepthStreamRequired () const;
       
-      void bayer2RGB ( const xn::ImageMetaData& bayer, sensor_msgs::Image& image, int method = 0 ) const;
-      void bayer2Gray ( const xn::ImageMetaData& bayer, sensor_msgs::Image& image, int method = 0 ) const;
+      void bayer2RGB ( const xn::ImageMetaData& bayer, sensor_msgs::Image& image, int method ) const;
+      void bayer2Gray ( const xn::ImageMetaData& bayer, sensor_msgs::Image& image, int method ) const;
 
       void YUV2RGB ( const xn::ImageMetaData& yuv, sensor_msgs::Image& image ) const;
       void YUV2Gray ( const xn::ImageMetaData& yuv, sensor_msgs::Image& image ) const;
