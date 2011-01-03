@@ -105,7 +105,7 @@ private:
         const float &z = point.z;
     */  
 
-      if ( isnan(x) || isnan(y) || isnan(z) )
+      if ( std::isnan(x) || std::isnan(y) || std::isnan(z) )
       {
         NODELET_DEBUG("rejected for nan in point(%f, %f, %f)\n", x, y, z);
         continue;  
