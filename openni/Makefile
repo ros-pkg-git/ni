@@ -3,7 +3,7 @@ all: installed
 GIT_DIR = build/openni
 GIT_URL = https://github.com/OpenNI/OpenNI.git
 #GIT_PATCH = redist.patch
-GIT_REVISION=master
+GIT_REVISION=unstable
 
 OPENNI=$(shell echo $$(eval rospack find openni | sed 's/\//\\\//g'))
 OPENNI_LIB=$(shell echo $$(eval rospack find openni | sed 's/\//\\\//g')\\/lib)
@@ -74,6 +74,9 @@ installed: $(GIT_DIR)
 	touch installed
 #	@patch -p0 < includes.patch
 
+doc:
+	doxygen Doxyfile
+	
 clean:
 	-cd $(GIT_DIR)/Platform/$(PLATFORM)/Build && make clean && cd -
 	rm -rf $(GIT_DIR)/Platform/$(PLATFORM)/CreateRedist/Final/*
@@ -83,3 +86,4 @@ clean:
 wipe:
 	rm -rf bin include lib installed
 	rm -rf build patched rospack_nosubdirs
+	rm -rf Doxygen

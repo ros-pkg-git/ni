@@ -1,7 +1,9 @@
 /*
  * Software License Agreement (BSD License)
  *
- *  Copyright (c) 2010, Willow Garage, Inc.
+ *  Copyright (c) 2011
+ *    Suat Gedikli <gedikli@willowgarage.com>
+ *
  *  All rights reserved.
  *
  *  Redistribution and use in source and binary forms, with or without
@@ -32,40 +34,34 @@
  *  POSSIBILITY OF SUCH DAMAGE.
  *
  */
-
-#ifndef OPENNI_NODELET_OPENNI_H_
-#define OPENNI_NODELET_OPENNI_H_
-
-#include <nodelet/nodelet.h>
-#include "openni_camera/openni_driver.h"
-#include <boost/thread.hpp>
+#ifndef __OPENNI_IMAGE_BAYER_GRBG__
+#define __OPENNI_IMAGE_BAYER_GRBG__
+#include <openni_camera/openni_image.h>
 
 namespace openni_wrapper
 {
-  ////////////////////////////////////////////////////////////////////////////////////////////
-  class OpenNIDriverNodelet : public nodelet::Nodelet
-  {
-    public:
-      virtual ~OpenNIDriverNodelet ()
-      {
-        spinthread_->join ();
-        delete spinthread_;
 
-        if (driver_)
-          delete driver_;
-      }
-    private:
-      /** \brief Nodelet initialization routine. */
-      virtual void onInit ();
-  
-      /** \brief Spin. */
-      void spin (); 
+/**
+ * @brief Concrete implementation of the interface Image for a YUV 422 image used by Primesense devices.
+ * @author Suat Gedikli
+ * @date 02.january 2011
+ */
+class ImageYUV422 : public Image
+{
+public:
+  ImageYUV422 (const xn::ImageMetaData& image_meta_data) throw ();
+  virtual ~ImageYUV422 () throw ();
 
-      /** \brief Object holding a pointer to the driver. */
-      OpenNIDriver* driver_;
-  
-      boost::thread* spinthread_;
-  };
+  virtual bool isResizingSupported (unsigned input_width, unsigned input_height, unsigned output_width, unsigned output_height) const;
+  virtual void fillRGB (unsigned width, unsigned height, unsigned char* rgb_buffer, unsigned rgb_line_step = 0) const throw (OpenNIException);
+  virtual void fillGrayscale (unsigned width, unsigned height, unsigned char* gray_buffer, unsigned gray_line_step = 0) const throw (OpenNIException);
+  inline static bool resizingSupported (unsigned input_width, unsigned input_height, unsigned output_width, unsigned output_height);
+};
+
+bool ImageYUV422::resizingSupported (unsigned input_width, unsigned input_height, unsigned output_width, unsigned output_height)
+{
+  return (output_width <= input_width && output_height <= input_height && input_width % output_width == 0 && input_height % output_height == 0);
 }
+} // namespace
 
-#endif  //#ifndef OPENNI_NODELET_OPENNI_H_
+#endif // __OPENNI_IMAGE__

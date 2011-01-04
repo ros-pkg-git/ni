@@ -35,12 +35,12 @@
 #include <pluginlib/class_list_macros.h>
 #include "openni_camera/openni_nodelets.h"
 
-typedef openni_camera::OpenNIDriverNodelet OpenNIDriver;
+typedef openni_wrapper::OpenNIDriverNodelet OpenNIDriver;
 
-PLUGINLIB_DECLARE_CLASS (openni_camera, OpenNIDriver, OpenNIDriver, nodelet::Nodelet);
+PLUGINLIB_DECLARE_CLASS (openni_wrapper, OpenNIDriver, OpenNIDriver, nodelet::Nodelet);
 
 void
-openni_camera::OpenNIDriverNodelet::onInit ()
+openni_wrapper::OpenNIDriverNodelet::onInit ()
 {
   /// @todo What exactly goes on with the threading here? -PM
   ros::NodeHandle comm_nh( getMTNodeHandle().resolveName("camera") ); // for topics, services
@@ -54,7 +54,7 @@ openni_camera::OpenNIDriverNodelet::onInit ()
 }
 
 void
-openni_camera::OpenNIDriverNodelet::spin ()
+openni_wrapper::OpenNIDriverNodelet::spin ()
 {
   driver_->spin ();
 }

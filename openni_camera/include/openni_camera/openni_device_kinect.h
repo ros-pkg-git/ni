@@ -1,7 +1,9 @@
 /*
  * Software License Agreement (BSD License)
  *
- *  Copyright (c) 2010, Willow Garage, Inc.
+ *  Copyright (c) 2011
+ *    Suat Gedikli <gedikli@willowgarage.com>
+ *
  *  All rights reserved.
  *
  *  Redistribution and use in source and binary forms, with or without
@@ -33,39 +35,46 @@
  *
  */
 
-#ifndef OPENNI_NODELET_OPENNI_H_
-#define OPENNI_NODELET_OPENNI_H_
+#ifndef __OPENNI_DEVICE_KINECT__
+#define __OPENNI_DEVICE_KINECT__
 
-#include <nodelet/nodelet.h>
-#include "openni_camera/openni_driver.h"
-#include <boost/thread.hpp>
+#include <openni_camera/openni_device.h>
+#include <openni_camera/openni_driver.h>
+#include <openni_camera/openni_image_bayer_grbg.h>
 
 namespace openni_wrapper
 {
-  ////////////////////////////////////////////////////////////////////////////////////////////
-  class OpenNIDriverNodelet : public nodelet::Nodelet
-  {
-    public:
-      virtual ~OpenNIDriverNodelet ()
-      {
-        spinthread_->join ();
-        delete spinthread_;
 
-        if (driver_)
-          delete driver_;
-      }
-    private:
-      /** \brief Nodelet initialization routine. */
-      virtual void onInit ();
-  
-      /** \brief Spin. */
-      void spin (); 
+/**
+ * @brief Concrete implementation of the interface OpenNIDevice for a MS Kinect device.
+ * @author Suat Gedikli
+ * @date 02.january 2011
+ */
+class DeviceKinect : public OpenNIDevice
+{
+  friend class OpenNIDriver;
+public:
+  DeviceKinect (xn::Context& context, const xn::NodeInfo& device_node, const xn::NodeInfo& image_node, const xn::NodeInfo& depth_node) throw (OpenNIException);
+  virtual ~DeviceKinect () throw ();
 
-      /** \brief Object holding a pointer to the driver. */
-      OpenNIDriver* driver_;
-  
-      boost::thread* spinthread_;
-  };
+  inline void setDebayeringMethod (const ImageBayerGRBG::DebayeringMethod& debayering_method) throw ();
+  inline const ImageBayerGRBG::DebayeringMethod& getDebayeringMethod () const throw ();
+protected:
+  virtual Image* getCurrentImage (const xn::ImageMetaData& image_meta_data) const throw ();
+  virtual void getAvailableModes () throw (OpenNIException);
+  virtual bool isImageResizeSupported (unsigned input_width, unsigned input_height, unsigned output_width, unsigned output_height) const throw ();
+  ImageBayerGRBG::DebayeringMethod debayering_method_;
+};
+
+void DeviceKinect::setDebayeringMethod (const ImageBayerGRBG::DebayeringMethod& debayering_method) throw ()
+{
+  debayering_method_ = debayering_method;
 }
 
-#endif  //#ifndef OPENNI_NODELET_OPENNI_H_
+const ImageBayerGRBG::DebayeringMethod& DeviceKinect::getDebayeringMethod () const throw ()
+{
+  return debayering_method_;
+}
+} // namespace
+
+#endif // __OPENNI_DEVICE_KINECT__

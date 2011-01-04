@@ -1,7 +1,9 @@
 /*
  * Software License Agreement (BSD License)
  *
- *  Copyright (c) 2010, Willow Garage, Inc.
+ *  Copyright (c) 2011
+ *    Suat Gedikli <gedikli@willowgarage.com>
+ *
  *  All rights reserved.
  *
  *  Redistribution and use in source and binary forms, with or without
@@ -33,39 +35,39 @@
  *
  */
 
-#ifndef OPENNI_NODELET_OPENNI_H_
-#define OPENNI_NODELET_OPENNI_H_
+#ifndef __OPENNI_DEVICE_PRIMESENSE__
+#define __OPENNI_DEVICE_PRIMESENSE__
 
-#include <nodelet/nodelet.h>
-#include "openni_camera/openni_driver.h"
-#include <boost/thread.hpp>
+#include <openni_camera/openni_device.h>
+#include <openni_camera/openni_driver.h>
+#include <openni_camera/openni_image_yuv_422.h>
 
 namespace openni_wrapper
 {
-  ////////////////////////////////////////////////////////////////////////////////////////////
-  class OpenNIDriverNodelet : public nodelet::Nodelet
-  {
-    public:
-      virtual ~OpenNIDriverNodelet ()
-      {
-        spinthread_->join ();
-        delete spinthread_;
+/**
+ * @brief Concrete implementation of the interface OpenNIDevice for a Primesense device.
+ * @author Suat Gedikli
+ * @date 02.january 2011
+ */
+class DevicePrimesense : public OpenNIDevice
+{
+  friend class OpenNIDriver;
+public:
+  DevicePrimesense (xn::Context& context, const xn::NodeInfo& device_node, const xn::NodeInfo& image_node, const xn::NodeInfo& depth_node) throw (OpenNIException);
+  virtual ~DevicePrimesense () throw ();
 
-        if (driver_)
-          delete driver_;
-      }
-    private:
-      /** \brief Nodelet initialization routine. */
-      virtual void onInit ();
-  
-      /** \brief Spin. */
-      void spin (); 
+  // override.. need workaround for registration!
+  virtual void startImageStream () throw (OpenNIException);
+  virtual void stopImageStream () throw (OpenNIException);
 
-      /** \brief Object holding a pointer to the driver. */
-      OpenNIDriver* driver_;
-  
-      boost::thread* spinthread_;
-  };
-}
+  virtual void startDepthStream () throw (OpenNIException);
+  virtual void stopDepthStream () throw (OpenNIException);
 
-#endif  //#ifndef OPENNI_NODELET_OPENNI_H_
+protected:
+  virtual Image* getCurrentImage (const xn::ImageMetaData& image_meta_data) const throw ();
+  virtual void getAvailableModes () throw (OpenNIException);
+  virtual bool isImageResizeSupported (unsigned input_width, unsigned input_height, unsigned output_width, unsigned output_height) const throw ();
+};
+} // namespace
+
+#endif // __OPENNI_DEVICE_PRIMESENSE__
