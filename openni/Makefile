@@ -3,7 +3,8 @@ all: installed
 GIT_DIR = build/openni
 GIT_URL = https://github.com/OpenNI/OpenNI.git
 #GIT_PATCH = redist.patch
-GIT_REVISION=unstable
+# unstable branch as of 2011-01-05
+GIT_REVISION=cb4b7981e0232b2f772b220752ae49e1d211bf94
 
 OPENNI=$(shell echo $$(eval rospack find openni | sed 's/\//\\\//g'))
 OPENNI_LIB=$(shell echo $$(eval rospack find openni | sed 's/\//\\\//g')\\/lib)
