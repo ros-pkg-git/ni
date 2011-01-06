@@ -3,7 +3,8 @@ all: installed
 GIT_DIR = build/ps_engine
 GIT_URL = https://github.com/ros-pkg-git/Sensor.git
 #GIT_PATCH = 
-GIT_REVISION=ros
+# ros branch as of 2011-01-05
+GIT_REVISION=894cea018698e49dc7dba02cc42d07a8e8f1cb69
 
 ENGINE=$(shell echo $$(eval rospack find ps_engine | sed 's/\//\\\//g'))
 ENGINE_LIB=$(shell echo $$(eval rospack find ps_engine | sed 's/\//\\\//g')\\/lib)
