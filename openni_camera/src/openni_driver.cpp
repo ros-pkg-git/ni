@@ -699,7 +699,7 @@ bool OpenNIDriver::updateDeviceSettings()
 
     if (rc_ != XN_STATUS_OK)
     {
-      ROS_ERROR ("[OpenNIDriver] Failed to create DepthGenerator: %s", xnGetStatusString (rc_));
+      ROS_ERROR ("[OpenNIDriver] Failed to create DepthGenerator: %s\n Please see http://www.ros.org/wiki/ni/Troubleshooting for more info.", xnGetStatusString (rc_));
       return (false);
     }
 
