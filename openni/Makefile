@@ -64,7 +64,7 @@ installed: $(GIT_DIR)
 		sed -Ei -e 's/..\/..\/..\/..\/Data\/SamplesConfig.xml/$(OPENNI_LIB)\/SamplesConfig.xml/g' NiSimpleRead/NiSimpleRead.cpp && \
 		sed -Ei -e 's/..\/..\/..\/..\/Data\/SamplesConfig.xml/$(OPENNI_LIB)\/SamplesConfig.xml/g' NiUserTracker/main.cpp && \
 		cd -
-	cd $(GIT_DIR)/Platform/$(PLATFORM)/Build && make && cd -
+	cd $(GIT_DIR)/Platform/$(PLATFORM)/Build && make core samples && cd -
 	@cp -r $(GIT_DIR)/Include/* include/ni
 	@cp $(GIT_DIR)/Data/SamplesConfig.xml lib/
 	@cp $(GIT_DIR)/Platform/$(PLATFORM)/Build/CommonMakefile include/ni/
