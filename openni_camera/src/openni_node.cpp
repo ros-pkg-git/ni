@@ -147,11 +147,11 @@ OpenNINode::OpenNINode (NodeHandle comm_nh, NodeHandle param_nh, boost::shared_p
 
 
   XnMapOutputMode output_mode;
-  device_->getImageOutputMode (output_mode)
+  device_->getImageOutputMode (output_mode);
   image_width_ = output_mode.nXRes;
   image_height_ = output_mode.nYRes;
 
-  device_->getDepthOutputMode (output_mode)
+  device_->getDepthOutputMode (output_mode);
   depth_width_ = output_mode.nXRes;
   image_height_ = output_mode.nYRes;
 }
@@ -253,7 +253,7 @@ void OpenNINode::configCallback (Config &config, uint32_t level)
   mapMode (config.depth_mode, output_mode);
   if (!device_->findFittingImageMode (output_mode, compatible_mode))
   {
-    device_->getDefaultDepthMode (compatible_mode)
+    device_->getDefaultDepthMode (compatible_mode);
     ROS_WARN ("Could not find any compatible depth output mode %d x %d @ %d. Falling back to default mode %d x %d @ %d.",
               output_mode.nXRes, output_mode.nYRes, output_mode.nFPS, compatible_mode.nXRes, compatible_mode.nYRes, compatible_mode.nFPS);
 
@@ -370,5 +370,3 @@ int main (int argc, char **argv)
   }
   return (0);
 }
-
-
