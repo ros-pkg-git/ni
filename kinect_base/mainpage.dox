@@ -1,0 +1,29 @@
+
+\mainpage
+\htmlinclude manifest.html
+
+\b kinect_base is ... 
+
+<!-- 
+Provide an overview of your package.
+-->
+
+kinect_base is a stripped version of libfreenect (originally written by Hector Martin) that
+only controls the tilt, imu, and leds on the kinect.  This allows control of only that part when the 
+depth and vision are claimed by OpenNI.
+
+\section codeapi Code API
+
+<!--
+Provide links to specific auto-generated API documentation within your
+package that is of particular interest to a reader. Doxygen will
+document pretty much every part of your code, so do your best here to
+point the reader to the actual API.
+
+If your codebase is fairly large or has different sets of APIs, you
+should use the doxygen 'group' tag to keep these APIs together. For
+example, the roscpp documentation has 'libros' group.
+-->
+
+
+
