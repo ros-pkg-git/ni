@@ -301,7 +301,7 @@ int main (int argc, char **argv)
       ROS_ERROR ("No devices connected.");
       exit (-1);
     }
-    ROS_INFO ("Number devices conneced: %d", driver.getNumberDevices ());
+    ROS_INFO ("Number devices connected: %d", driver.getNumberDevices ());
 
     boost::shared_ptr<OpenNIDevice> device;
     if (deviceID == "")
