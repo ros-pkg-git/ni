@@ -15,7 +15,11 @@ BIN_DIR = $(SOURCE_DIR)/bin-pc/$(ARCH_DIR)
 
 TARBALL     = build/primesense-nite-beta-ubuntu-$(ARCH_DIR)-v1-3-0.tar.bz2
 TARBALL_URL = http://downloads.primesense.com/NITE-Bin-Ubuntu-$(ARCH_DIR)-1.3.0.17.tar.bz2
-TARBALL_URL = http://www.openni.org/downloadfiles/openni-compliant-middleware-binaries/stable/53-primesense-nite-beta-build-for-for-ubuntu-10-10-$(ARCH_DIR)-bit-v1-3-0/download
+ifeq ($(ARCH_DIR), x86)
+TARBALL_URL = http://www.openni.org/downloadfiles/openni-compliant-middleware-binaries/stable/54-primesense-nite-beta-build-for-for-ubuntu-10-10-x86-32-bit-v1-3-0/download
+else
+TARBALL_URL = http://www.openni.org/downloadfiles/openni-compliant-middleware-binaries/stable/53-primesense-nite-beta-build-for-for-ubuntu-10-10-x64-64-bit-v1-3-0/download
+endif
 UNPACK_CMD  = tar xfj
 SOURCE_DIR  = build/Nite-1.3.0.17
 TARBALL_PATCH = 
