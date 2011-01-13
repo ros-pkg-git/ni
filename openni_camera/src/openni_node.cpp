@@ -81,10 +81,10 @@ public:
 
     struct /*anonymous*/
     {
-      unsigned char Blue; // Blue channel
-      unsigned char Green; // Green channel
-      unsigned char Red; // Red channel
-      unsigned char Alpha; // Alpha channel
+      unsigned char Blue;
+      unsigned char Green;
+      unsigned char Red;
+      unsigned char Alpha;
     };
     float float_value;
     long long_value;
@@ -101,6 +101,9 @@ protected:
   void imageCallback (const Image& image, void* cookie);
   void depthCallback (const DepthImage& depth, void* cookie);
 
+  void publishRgbInfo (ros::Time time);
+  void publishRgbImageColor (const Image& image, ros::Time time);
+  void publishRgbImageMono (const Image& image, ros::Time time);
   void publishDepthInfo (const DepthImage& depth, ros::Time time);
   void publishDepthImage (const DepthImage& depth, ros::Time time);
   void publishDisparity (const DepthImage& depth, ros::Time time);
@@ -167,14 +170,12 @@ OpenNINode::OpenNINode (NodeHandle comm_nh, NodeHandle param_nh,
   pub_disparity_   = comm_nh_.advertise<stereo_msgs::DisparityImage > ("depth/disparity", 15);
   pub_point_cloud_ = comm_nh.advertise<PointCloud > ("depth/points2", 15);
 
-#if 0
   /// @todo Set inter-message lower bound, age penalty, max interval to lower latency
   SyncPolicy sync_policy (4); // queue size
   // Connect no inputs, we'll add messages manually
   depth_rgb_sync_.reset (new Synchronizer (sync_policy));
   depth_rgb_sync_->registerCallback (boost::bind (&OpenNINode::publishXYZRGBPointCloud,
                                                   this, _1, _2));
-#endif
 
   /// @todo Is this done in configCallback?
   XnMapOutputMode output_mode;
@@ -191,12 +192,11 @@ OpenNINode::OpenNINode (NodeHandle comm_nh, NodeHandle param_nh,
   device_->registerDepthCallback (&OpenNINode::depthCallback, *this, NULL);
 
   /// @todo Control by dynamic reconfigure
-  //device_->setDepthRegistration (true);
+  device_->setDepthRegistration (true);
   
   /// @todo Start and stop as needed
   device_->startImageStream ();
   device_->startDepthStream ();
-  //device_->startImageStream ();
 }
 
 OpenNINode::~OpenNINode ()
@@ -211,8 +211,47 @@ void OpenNINode::imageCallback (const Image& image, void* cookie)
   /// @todo Some sort of offset based on the device timestamp
   ros::Time time = ros::Time::now();
 
-  /// @todo Only create when subscribed to
-  sensor_msgs::CameraInfoPtr rgb_info = boost::make_shared<sensor_msgs::CameraInfo>();
+  if (pub_rgb_info_.getNumSubscribers () > 0)
+    publishRgbInfo(time);
+
+  if (pub_rgb_image_.getNumSubscribers () > 0 ||
+      (pub_point_cloud_.getNumSubscribers () > 0 &&
+       config_.point_cloud_type == OpenNI_XYZRGB))
+    publishRgbImageColor (image, time);
+  
+  if (pub_gray_image_.getNumSubscribers () > 0)
+    publishRgbImageMono (image, time);
+}
+
+void OpenNINode::depthCallback (const DepthImage& depth, void* cookie)
+{
+  /// @todo Some sort of offset based on the device timestamp
+  ros::Time time = ros::Time::now();
+
+  // Camera info for depth image
+  if (pub_depth_info_.getNumSubscribers () > 0)
+    publishDepthInfo (depth, time);
+  
+  // Depth image
+  if (pub_depth_image_.getNumSubscribers () > 0 ||
+      (pub_point_cloud_.getNumSubscribers () > 0 &&
+       config_.point_cloud_type == OpenNI_XYZRGB))
+    publishDepthImage (depth, time);
+
+  // Disparity image
+  if (pub_disparity_.getNumSubscribers () > 0)
+    publishDisparity (depth, time);
+
+  // Unregistered point cloud
+  /// @todo When config is not for XYZRGB
+  if (pub_point_cloud_.getNumSubscribers () > 0 &&
+      config_.point_cloud_type != OpenNI_XYZRGB)
+    publishXYZPointCloud(depth, time);
+}
+
+void OpenNINode::publishRgbInfo (ros::Time time)
+{
+    sensor_msgs::CameraInfoPtr rgb_info = boost::make_shared<sensor_msgs::CameraInfo>();
   rgb_info->header.stamp    = time;
   rgb_info->header.frame_id = rgb_frame_id_;
   // No distortion (yet!)
@@ -242,8 +281,10 @@ void OpenNINode::imageCallback (const Image& image, void* cookie)
   rgb_info->height  = image_height_;
 
   pub_rgb_info_.publish(rgb_info);
+}
 
-  /// @todo Only create when RGB image is needed
+void OpenNINode::publishRgbImageColor (const Image& image, ros::Time time)
+{
   sensor_msgs::ImagePtr rgb_msg = boost::make_shared<sensor_msgs::Image> ();
   rgb_msg->header.stamp    = time;
   rgb_msg->header.frame_id = rgb_frame_id_;
@@ -255,8 +296,13 @@ void OpenNINode::imageCallback (const Image& image, void* cookie)
   image.fillRGB(rgb_msg->width, rgb_msg->height, &rgb_msg->data[0], rgb_msg->step);
 
   pub_rgb_image_.publish(rgb_msg);
+  if (pub_point_cloud_.getNumSubscribers () > 0 &&
+      config_.point_cloud_type == OpenNI_XYZRGB)
+    depth_rgb_sync_->add<1>(rgb_msg);
+}
 
-  /// @todo Only create if subscribed to
+void OpenNINode::publishRgbImageMono (const Image& image, ros::Time time)
+{
   sensor_msgs::ImagePtr gray_msg = boost::make_shared<sensor_msgs::Image> ();
   gray_msg->header.stamp    = time;
   gray_msg->header.frame_id = rgb_frame_id_;
@@ -269,30 +315,6 @@ void OpenNINode::imageCallback (const Image& image, void* cookie)
                       gray_msg->step);
 
   pub_gray_image_.publish(gray_msg);
-}
-
-void OpenNINode::depthCallback (const DepthImage& depth, void* cookie)
-{
-  /// @todo Some sort of offset based on the device timestamp
-  ros::Time time = ros::Time::now();
-
-  // Camera info for depth image
-  if (pub_depth_info_.getNumSubscribers () > 0)
-    publishDepthInfo (depth, time);
-  
-  // Depth image
-  if (pub_depth_image_.getNumSubscribers () > 0)
-    publishDepthImage (depth, time);
-
-  // Disparity image
-  if (pub_disparity_.getNumSubscribers () > 0)
-    publishDisparity (depth, time);
-
-  // Unregistered point cloud
-  /// @todo When config is not for XYZRGB
-  if (pub_point_cloud_.getNumSubscribers () > 0 &&
-      config_.point_cloud_type != OpenNI_XYZRGB)
-    publishXYZPointCloud(depth, time);
 }
 
 void OpenNINode::publishDepthInfo (const DepthImage& depth, ros::Time time)
@@ -323,6 +345,10 @@ void OpenNINode::publishDepthImage (const DepthImage& depth, ros::Time time)
                        depth_msg->step);
 
   pub_depth_image_.publish (depth_msg);
+  
+  if (pub_point_cloud_.getNumSubscribers () > 0 &&
+      config_.point_cloud_type == OpenNI_XYZRGB)
+    depth_rgb_sync_->add<0>(depth_msg);
 }
 
 void OpenNINode::publishDisparity (const DepthImage& depth, ros::Time time)
@@ -375,21 +401,20 @@ void OpenNINode::publishXYZPointCloud (const DepthImage& depth, ros::Time time)
     cloud_msg->header.frame_id = depth_frame_id_;
   }
 
-  unsigned depthStep = depth_md.XRes () / cloud_msg->width;
-  unsigned depthSkip = (depth_md.YRes () / cloud_msg->height - 1) * depth_md.XRes ();
-
   float centerX = (cloud_msg->width  / 2) - 0.5f;
   float centerY = (cloud_msg->height / 2) - 0.5f;
 
   float bad_point = std::numeric_limits<float>::quiet_NaN ();
   
+  unsigned depthStep = depth_md.XRes () / cloud_msg->width;
+  unsigned depthSkip = (depth_md.YRes () / cloud_msg->height - 1) * depth_md.XRes ();
   int depth_idx = 0;
   PointCloud::iterator pt_iter = cloud_msg->begin();
   for (int v = 0; v < (int)cloud_msg->height; ++v, depth_idx += depthSkip)
   {
     for (int u = 0; u < (int)cloud_msg->width; ++u, depth_idx += depthStep, ++pt_iter)
     {
-      pcl::PointXYZRGB& pt = *pt_iter; //(*cloud_msg)(u, v);
+      pcl::PointXYZRGB& pt = *pt_iter;
       
       // Check for invalid measurements
       if (depth_md[depth_idx] == 0 ||
@@ -414,7 +439,57 @@ void OpenNINode::publishXYZPointCloud (const DepthImage& depth, ros::Time time)
 void OpenNINode::publishXYZRGBPointCloud (const sensor_msgs::ImageConstPtr& depth_msg,
                                           const sensor_msgs::ImageConstPtr& rgb_msg)
 {
+  PointCloud::Ptr cloud_msg = boost::make_shared<PointCloud> ();
+  cloud_msg->header.stamp    = depth_msg->header.stamp;
+  cloud_msg->header.frame_id = rgb_frame_id_;
+  cloud_msg->height = depth_msg->height;
+  cloud_msg->width  = depth_msg->width;
+  cloud_msg->is_dense = false;
 
+  cloud_msg->points.resize(cloud_msg->height * cloud_msg->width);
+  
+  float constant = 1.0f / device_->getImageFocalLength(cloud_msg->width);
+  float centerX = (cloud_msg->width  / 2) - 0.5f;
+  float centerY = (cloud_msg->height / 2) - 0.5f;
+  const float* depth_buffer = reinterpret_cast<const float*>(&depth_msg->data[0]);
+  const uint8_t* rgb_buffer = &rgb_msg->data[0];
+
+  // depth_msg already has the desired dimensions, but rgb_msg may be higher res.
+  unsigned color_step = 3 * rgb_msg->width / cloud_msg->width;
+  unsigned color_skip = 3 * (rgb_msg->height / cloud_msg->height - 1) * rgb_msg->width;
+  int color_idx = 0, depth_idx = 0;
+  PointCloud::iterator pt_iter = cloud_msg->begin();
+  for (int v = 0; v < (int)cloud_msg->height; ++v, color_idx += color_skip)
+  {
+    for (int u = 0; u < (int)cloud_msg->width;
+         ++u, color_idx += color_step, ++depth_idx, ++pt_iter)
+    {
+      pcl::PointXYZRGB& pt = *pt_iter;
+      float Z = depth_buffer[depth_idx];
+
+      // Check for invalid measurements
+      if (std::isnan(Z))
+      {
+        pt.x = pt.y = pt.z = pt.rgb = Z;
+        continue;
+      }
+
+      // Fill in XYZ
+      pt.x = (u - centerX) * Z * constant;
+      pt.y = (v - centerY) * Z * constant;
+      pt.z = Z;
+
+      // Fill in color
+      RGBValue color;
+      color.Red   = rgb_buffer[color_idx];
+      color.Green = rgb_buffer[color_idx + 1];
+      color.Blue  = rgb_buffer[color_idx + 2];
+      color.Alpha = 0;
+      pt.rgb = color.float_value;
+    }
+  }
+
+  pub_point_cloud_.publish(cloud_msg);
 }
 
 int OpenNINode::mapMode (const XnMapOutputMode& output_mode) const
