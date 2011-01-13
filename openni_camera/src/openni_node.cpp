@@ -101,7 +101,7 @@ protected:
   void imageCallback (const Image& image, void* cookie);
   void depthCallback (const DepthImage& depth, void* cookie);
 
-  void publishRgbInfo (ros::Time time);
+  sensor_msgs::CameraInfoPtr fillCameraInfo (ros::Time time, bool is_rgb);
   void publishRgbImageColor (const Image& image, ros::Time time);
   void publishRgbImageMono (const Image& image, ros::Time time);
   void publishDepthInfo (const DepthImage& depth, ros::Time time);
@@ -209,7 +209,7 @@ void OpenNINode::imageCallback (const Image& image, void* cookie)
   ros::Time time = ros::Time::now();
 
   if (pub_rgb_info_.getNumSubscribers () > 0)
-    publishRgbInfo(time);
+    pub_rgb_info_.publish (fillCameraInfo (time, true));
 
   if (pub_rgb_image_.getNumSubscribers () > 0 ||
       (pub_point_cloud_.getNumSubscribers () > 0 &&
@@ -227,7 +227,7 @@ void OpenNINode::depthCallback (const DepthImage& depth, void* cookie)
 
   // Camera info for depth image
   if (pub_depth_info_.getNumSubscribers () > 0)
-    publishDepthInfo (depth, time);
+    pub_depth_info_.publish (fillCameraInfo (time, device_->isDepthRegistered ()));
   
   // Depth image
   if (pub_depth_image_.getNumSubscribers () > 0 ||
@@ -245,38 +245,39 @@ void OpenNINode::depthCallback (const DepthImage& depth, void* cookie)
     publishXYZPointCloud(depth, time);
 }
 
-void OpenNINode::publishRgbInfo (ros::Time time)
+sensor_msgs::CameraInfoPtr OpenNINode::fillCameraInfo (ros::Time time, bool is_rgb)
 {
-  sensor_msgs::CameraInfoPtr rgb_info = boost::make_shared<sensor_msgs::CameraInfo>();
-  rgb_info->header.stamp    = time;
-  rgb_info->header.frame_id = rgb_frame_id_;
+  sensor_msgs::CameraInfoPtr info_msg = boost::make_shared<sensor_msgs::CameraInfo>();
+  info_msg->header.stamp    = time;
+  info_msg->header.frame_id = is_rgb ? rgb_frame_id_ : depth_frame_id_;
+  info_msg->width  = is_rgb ? image_width_  : depth_width_;
+  info_msg->height = is_rgb ? image_height_ : depth_height_;
   // No distortion (yet!)
 #if ROS_VERSION_MINIMUM(1, 3, 0)
-  rgb_info->D = std::vector<double>( 5, 0.0 );
-  rgb_info->distortion_model = sensor_msgs::distortion_models::PLUMB_BOB;
+  info_msg->D = std::vector<double>( 5, 0.0 );
+  info_msg->distortion_model = sensor_msgs::distortion_models::PLUMB_BOB;
 #else
-  rgb_info->D.assign( 0.0 );
+  info_msg->D.assign( 0.0 );
 #endif
-  rgb_info->K.assign( 0.0 );
-  rgb_info->R.assign( 0.0 );
-  rgb_info->P.assign( 0.0 );
+  info_msg->K.assign( 0.0 );
+  info_msg->R.assign( 0.0 );
+  info_msg->P.assign( 0.0 );
   // Simple camera matrix: square pixels, principal point at center
-  double f = device_->getImageFocalLength(image_width_);
-  rgb_info->K[0] = rgb_info->K[4] = f;
-  rgb_info->K[2] = (image_width_  / 2) - 0.5;
-  rgb_info->K[5] = (image_height_ / 2) - 0.5;
-  rgb_info->K[8] = 1.0;
+  double f = is_rgb ? device_->getImageFocalLength(image_width_) :
+                      device_->getDepthFocalLength(depth_width_);
+  info_msg->K[0] = info_msg->K[4] = f;
+  info_msg->K[2] = (info_msg->width  / 2) - 0.5;
+  info_msg->K[5] = (info_msg->height / 2) - 0.5;
+  info_msg->K[8] = 1.0;
   // no rotation: identity
-  rgb_info->R[0] = rgb_info->R[4] = rgb_info->R[8] = 1.0;
+  info_msg->R[0] = info_msg->R[4] = info_msg->R[8] = 1.0;
   // no rotation, no translation => P=K(I|0)=(K|0)
-  rgb_info->P[0]    = rgb_info->P[5] = rgb_info->K[0];
-  rgb_info->P[2]    = rgb_info->K[2];
-  rgb_info->P[6]    = rgb_info->K[5];
-  rgb_info->P[10]   = 1.0;
-  rgb_info->width   = image_width_;
-  rgb_info->height  = image_height_;
+  info_msg->P[0]    = info_msg->P[5] = info_msg->K[0];
+  info_msg->P[2]    = info_msg->K[2];
+  info_msg->P[6]    = info_msg->K[5];
+  info_msg->P[10]   = 1.0;
 
-  pub_rgb_info_.publish(rgb_info);
+  return info_msg;
 }
 
 void OpenNINode::publishRgbImageColor (const Image& image, ros::Time time)
@@ -311,17 +312,6 @@ void OpenNINode::publishRgbImageMono (const Image& image, ros::Time time)
                       gray_msg->step);
 
   pub_gray_image_.publish(gray_msg);
-}
-
-void OpenNINode::publishDepthInfo (const DepthImage& depth, ros::Time time)
-{
-  sensor_msgs::CameraInfoPtr depth_info = boost::make_shared<sensor_msgs::CameraInfo>();
-  depth_info->header.stamp    = time;
-  //depth_info->header.frame_id =
-  /// @todo When registered, this needs to be the same as RGB info. So combine with
-  /// publishRgbInfo.
-
-  pub_depth_info_.publish (depth_info);
 }
 
 void OpenNINode::publishDepthImage (const DepthImage& depth, ros::Time time)
