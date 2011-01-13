@@ -58,10 +58,10 @@ public:
   void fillDisparityImage (unsigned width, unsigned height, float* disparity_buffer, unsigned line_step = 0) const throw (OpenNIException);
   void fillDepthImage (unsigned width, unsigned height, float* depth_buffer, unsigned line_step = 0) const throw (OpenNIException);
 
-  inline float getBaseline () throw ();
-  inline float getFocalLength () throw ();
-  inline XnUInt64 getShadowValue () throw ();
-  inline XnUInt64 getNoSampleValue () throw ();
+  inline float getBaseline () const throw ();
+  inline float getFocalLength () const throw ();
+  inline XnUInt64 getShadowValue () const throw ();
+  inline XnUInt64 getNoSampleValue () const throw ();
   inline unsigned getWidth () const throw ();
   inline unsigned getHeight () const throw ();
   inline unsigned getFrameID () const throw ();
@@ -92,22 +92,22 @@ const xn::DepthMetaData& DepthImage::getDepthMetaData () const throw ()
   return depth_md_;
 }
 
-float DepthImage::getBaseline () throw ()
+float DepthImage::getBaseline () const throw ()
 {
   return baseline_;
 }
 
-float DepthImage::getFocalLength () throw ()
+float DepthImage::getFocalLength () const throw ()
 {
   return focal_length_;
 }
 
-XnUInt64 DepthImage::getShadowValue () throw ()
+XnUInt64 DepthImage::getShadowValue () const throw ()
 {
   return shadow_value_;
 }
 
-XnUInt64 DepthImage::getNoSampleValue () throw ()
+XnUInt64 DepthImage::getNoSampleValue () const throw ()
 {
   return no_sample_value_;
 }

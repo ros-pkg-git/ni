@@ -99,6 +99,11 @@ public:
 protected:
   void imageCallback (const Image& image, void* cookie);
   void depthCallback (const DepthImage& depth, void* cookie);
+
+  void publishDepthInfo (const DepthImage& depth, ros::Time time);
+  void publishDepthImage (const DepthImage& depth, ros::Time time);
+  void publishDisparity (const DepthImage& depth, ros::Time time);
+  
   void configCallback (Config &config, uint32_t level);
   void updateDeviceSettings (const Config &config); /// @todo Not implemented
   int mapMode (const XnMapOutputMode& output_mode) const;
@@ -109,12 +114,11 @@ protected:
   unsigned depth_width_;
   unsigned depth_height_;
   boost::shared_ptr<OpenNIDevice> device_;
-  ros::Publisher pub_rgb_info_;
-  image_transport::Publisher pub_rgb_image_, pub_gray_image_;
-  image_transport::CameraPublisher pub_depth_image_;
+  ros::Publisher pub_rgb_info_, pub_depth_info_;
+  image_transport::Publisher pub_rgb_image_, pub_gray_image_, pub_depth_image_;
   ros::Publisher pub_disparity_;
   ros::Publisher pub_depth_points2_;
-  bool is_primesense_device_;
+  bool is_primesense_device_; /// @todo Not used anywhere
 
   string topic_;
   NodeHandle comm_nh_;
@@ -144,9 +148,10 @@ OpenNINode::OpenNINode (NodeHandle comm_nh, NodeHandle param_nh,
   image_transport::ImageTransport image_transport (comm_nh);
   /// @todo 15 looks like overkill for the queue size
   pub_rgb_info_    = comm_nh_.advertise<sensor_msgs::CameraInfo> ("rgb/camera_info", 15);
+  pub_depth_info_  = comm_nh_.advertise<sensor_msgs::CameraInfo> ("depth/camera_info", 15);
   pub_rgb_image_   = image_transport.advertise ("rgb/image_color", 15);
   pub_gray_image_  = image_transport.advertise ("rgb/image_mono", 15);
-  pub_depth_image_ = image_transport.advertiseCamera ("depth/image", 15);
+  pub_depth_image_ = image_transport.advertise ("depth/image", 15);
   pub_disparity_   = comm_nh_.advertise<stereo_msgs::DisparityImage > ("depth/disparity", 15);
   // pub_depth_points2_ = comm_nh.advertise<PointCloud > ("depth/points2", 15);
 
@@ -168,14 +173,14 @@ OpenNINode::OpenNINode (NodeHandle comm_nh, NodeHandle param_nh,
 
   // registering callback functions
   device_->registerImageCallback (&OpenNINode::imageCallback, *this, NULL);
-  //device_->registerDepthCallback (&OpenNINode::depthCallback, *this, NULL);
+  device_->registerDepthCallback (&OpenNINode::depthCallback, *this, NULL);
 
   /// @todo Control by dynamic reconfigure
   //device_->setDepthRegistration (true);
   
   /// @todo Start and stop as needed
-  device_->startImageStream ();
-  //device_->startDepthStream ();
+  //device_->startImageStream ();
+  device_->startDepthStream ();
   //device_->startImageStream ();
 }
 
@@ -223,7 +228,7 @@ void OpenNINode::imageCallback (const Image& image, void* cookie)
   pub_rgb_info_.publish(rgb_info);
 
   /// @todo Only create when RGB image is needed
-  sensor_msgs::ImagePtr rgb_msg = boost::make_shared<sensor_msgs::Image>();
+  sensor_msgs::ImagePtr rgb_msg = boost::make_shared<sensor_msgs::Image> ();
   rgb_msg->header.stamp    = time;
   rgb_msg->header.frame_id = rgb_frame_id_;
   rgb_msg->encoding = sensor_msgs::image_encodings::RGB8;
@@ -236,7 +241,7 @@ void OpenNINode::imageCallback (const Image& image, void* cookie)
   pub_rgb_image_.publish(rgb_msg);
 
   /// @todo Only create if subscribed to
-  sensor_msgs::ImagePtr gray_msg = boost::make_shared<sensor_msgs::Image>();
+  sensor_msgs::ImagePtr gray_msg = boost::make_shared<sensor_msgs::Image> ();
   gray_msg->header.stamp    = time;
   gray_msg->header.frame_id = rgb_frame_id_;
   gray_msg->encoding = sensor_msgs::image_encodings::MONO8;
@@ -252,7 +257,76 @@ void OpenNINode::imageCallback (const Image& image, void* cookie)
 
 void OpenNINode::depthCallback (const DepthImage& depth, void* cookie)
 {
+  /// @todo Some sort of offset based on the device timestamp
+  ros::Time time = ros::Time::now();
 
+  // Camera info for depth image
+  if (pub_depth_info_.getNumSubscribers () > 0)
+    publishDepthInfo (depth, time);
+  
+  // Depth image
+  if (pub_depth_image_.getNumSubscribers () > 0)
+    publishDepthImage (depth, time);
+
+  // Disparity image
+  if (pub_disparity_.getNumSubscribers () > 0)
+    publishDisparity (depth, time);
+}
+
+void OpenNINode::publishDepthInfo (const DepthImage& depth, ros::Time time)
+{
+  sensor_msgs::CameraInfoPtr depth_info = boost::make_shared<sensor_msgs::CameraInfo>();
+  depth_info->header.stamp    = time;
+  //depth_info->header.frame_id =
+  /// @todo When registered, this needs to be the same as RGB info. So combine with
+  /// publishRgbInfo.
+
+  pub_depth_info_.publish (depth_info);
+}
+
+void OpenNINode::publishDepthImage (const DepthImage& depth, ros::Time time)
+{
+  sensor_msgs::ImagePtr depth_msg = boost::make_shared<sensor_msgs::Image> ();
+  depth_msg->header.stamp    = time;
+  depth_msg->header.frame_id = device_->isDepthRegistered () ? rgb_frame_id_ :
+                                                               depth_frame_id_;
+  depth_msg->encoding = sensor_msgs::image_encodings::TYPE_32FC1;
+  depth_msg->height   = depth_height_;
+  depth_msg->width    = depth_width_;
+  depth_msg->step     = depth_msg->width * sizeof(float);
+  depth_msg->data.resize (depth_msg->height * depth_msg->step);
+
+  depth.fillDepthImage(depth_msg->width, depth_msg->height,
+                       reinterpret_cast<float*>(&depth_msg->data[0]),
+                       depth_msg->step);
+
+  pub_depth_image_.publish (depth_msg);
+}
+
+void OpenNINode::publishDisparity (const DepthImage& depth, ros::Time time)
+{
+  stereo_msgs::DisparityImagePtr disp_msg = boost::make_shared<stereo_msgs::DisparityImage> ();
+  disp_msg->header.stamp    = time;
+  disp_msg->header.frame_id = device_->isDepthRegistered () ? rgb_frame_id_ :
+                                                              depth_frame_id_;
+  disp_msg->image.header = disp_msg->header;
+  disp_msg->image.encoding = sensor_msgs::image_encodings::TYPE_32FC1;
+  disp_msg->image.height   = depth_height_;
+  disp_msg->image.width    = depth_width_;
+  disp_msg->image.step     = disp_msg->image.width * sizeof(float);
+  disp_msg->image.data.resize (disp_msg->image.height * disp_msg->image.step);
+  disp_msg->T = depth.getBaseline ();
+  disp_msg->f = depth.getFocalLength () * depth_width_ / depth.getWidth ();
+  /// @todo Compute these values from DepthGenerator::GetDeviceMaxDepth() and the like
+  disp_msg->min_disparity = 0.0;
+  disp_msg->max_disparity = disp_msg->T * disp_msg->f / 0.3;
+  disp_msg->delta_d = 0.125;
+
+  depth.fillDisparityImage(disp_msg->image.width, disp_msg->image.height,
+                           reinterpret_cast<float*>(&disp_msg->image.data[0]),
+                           disp_msg->image.step);
+
+  pub_disparity_.publish (disp_msg);
 }
 
 int OpenNINode::mapMode (const XnMapOutputMode& output_mode) const
