@@ -191,9 +191,6 @@ OpenNINode::OpenNINode (NodeHandle comm_nh, NodeHandle param_nh,
   device_->registerImageCallback (&OpenNINode::imageCallback, *this, NULL);
   device_->registerDepthCallback (&OpenNINode::depthCallback, *this, NULL);
 
-  /// @todo Control by dynamic reconfigure
-  device_->setDepthRegistration (true);
-  
   /// @todo Start and stop as needed
   device_->startImageStream ();
   device_->startDepthStream ();
@@ -243,7 +240,6 @@ void OpenNINode::depthCallback (const DepthImage& depth, void* cookie)
     publishDisparity (depth, time);
 
   // Unregistered point cloud
-  /// @todo When config is not for XYZRGB
   if (pub_point_cloud_.getNumSubscribers () > 0 &&
       config_.point_cloud_type != OpenNI_XYZRGB)
     publishXYZPointCloud(depth, time);
@@ -251,7 +247,7 @@ void OpenNINode::depthCallback (const DepthImage& depth, void* cookie)
 
 void OpenNINode::publishRgbInfo (ros::Time time)
 {
-    sensor_msgs::CameraInfoPtr rgb_info = boost::make_shared<sensor_msgs::CameraInfo>();
+  sensor_msgs::CameraInfoPtr rgb_info = boost::make_shared<sensor_msgs::CameraInfo>();
   rgb_info->header.stamp    = time;
   rgb_info->header.frame_id = rgb_frame_id_;
   // No distortion (yet!)
@@ -605,8 +601,12 @@ void OpenNINode::configCallback (Config &config, uint32_t level)
   }
   device_->setDepthOutputMode (compatible_mode);
 
-  // now
-  /// @todo Registration?
+  /// @todo Switching between registered and unregistered has weird behavior
+#if 1
+  bool do_registration = config_.point_cloud_type != OpenNI_XYZ_unregistered;
+  device_->setDepthRegistration (do_registration);
+#endif
+
   /// @todo Make sure in XYZRGB that image res is at least as large as depth res
   config_ = config;
 }
