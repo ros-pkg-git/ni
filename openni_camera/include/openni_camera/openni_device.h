@@ -189,7 +189,7 @@ float OpenNIDevice::getImageFocalLength (int output_x_resolution) const throw ()
     getImageOutputMode (output_mode);
     output_x_resolution = output_mode.nXRes;
   }
-  float scale = 1280.0f / output_x_resolution;
+  float scale = output_x_resolution / 1280.0f;
   return rgb_focal_length_SXGA_ * scale;
 }
 
@@ -201,7 +201,7 @@ float OpenNIDevice::getDepthFocalLength (int output_x_resolution) const throw ()
     getDepthOutputMode (output_mode);
     output_x_resolution = output_mode.nXRes;
   }
-  float scale = 1280.0f / output_x_resolution;
+  float scale = output_x_resolution / 1280.0f;
   if (isDepthRegistered ())
     return rgb_focal_length_SXGA_ * scale;
   else

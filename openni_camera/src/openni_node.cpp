@@ -186,6 +186,7 @@ OpenNINode::~OpenNINode ()
 
 void OpenNINode::imageCallback (const Image& image, void* cookie)
 {
+  /// @todo Separate this into smaller functions
   /// @todo Some sort of offset based on the device timestamp
   ros::Time time = ros::Time::now();
 
@@ -234,7 +235,19 @@ void OpenNINode::imageCallback (const Image& image, void* cookie)
 
   pub_rgb_image_.publish(rgb_msg);
 
-  /// @todo Also publish monochrome image if subscribed to
+  /// @todo Only create if subscribed to
+  sensor_msgs::ImagePtr gray_msg = boost::make_shared<sensor_msgs::Image>();
+  gray_msg->header.stamp    = time;
+  gray_msg->header.frame_id = rgb_frame_id_;
+  gray_msg->encoding = sensor_msgs::image_encodings::MONO8;
+  gray_msg->height   = image_height_;
+  gray_msg->width    = image_width_;
+  gray_msg->step     = image_width_;
+  gray_msg->data.resize (gray_msg->height * gray_msg->step);
+  image.fillGrayscale(gray_msg->width, gray_msg->height, &gray_msg->data[0],
+                      gray_msg->step);
+
+  pub_gray_image_.publish(gray_msg);
 }
 
 void OpenNINode::depthCallback (const DepthImage& depth, void* cookie)
