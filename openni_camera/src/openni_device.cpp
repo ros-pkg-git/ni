@@ -256,7 +256,8 @@ void OpenNIDevice::DepthDataThreadFunction () throw (OpenNIException)
     depth_generator_.WaitAndUpdateData ();
     xn::DepthMetaData depth_data;
     depth_generator_.GetMetaData (depth_data);
-    DepthImage depth_image (depth_data, baseline_, getNativeDepthFocalLength (), shadow_value_, no_sample_value_);
+    DepthImage depth_image (depth_data, baseline_, getDepthFocalLength (),
+                            shadow_value_, no_sample_value_);
 
     for (map< OpenNIDevice::CallbackHandle, pair< DepthImageCallbackFunction, void* > >::iterator callbackIt = depth_callback_.begin (); callbackIt != depth_callback_.end (); ++callbackIt)
     {

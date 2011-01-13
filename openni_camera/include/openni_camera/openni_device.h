@@ -41,16 +41,17 @@
 #include <vector>
 #include <utility>
 #include <openni_camera/openni_exception.h>
+#include <openni_camera/openni_image.h>
+#include <openni_camera/openni_depth_image.h>
 #include <XnCppWrapper.h>
 #include <boost/noncopyable.hpp>
 #include <boost/function.hpp>
 #include <boost/thread.hpp>
 
+/// @todo Get rid of all exception-specifications, these are useless and soon to be deprecated
+
 namespace openni_wrapper
 {
-class Image;
-class DepthImage;
-
 /**
  * @brief Class representing an astract device for Primesense or MS Kinect devices.
  * @author Suat Gedikli
@@ -86,11 +87,11 @@ public:
   /** \brief returns the focal length for the color camera in pixels. pixels are assumed to be square.
    Result depends on the output resolution of the image.
    */
-  inline float getImageFocalLength () const throw ();
+  inline float getImageFocalLength (int output_x_resolution = 0) const throw ();
   /** \brief returns the focal length for the ir camera in pixels. pixels are assumed to be square.
    Result depends on the output resolution of the depth image.
    */
-  inline float getDepthFocalLength () const throw ();
+  inline float getDepthFocalLength (int output_x_resolution = 0) const throw ();
   inline float getBaseline () const throw ();
 
   virtual void startImageStream () throw (OpenNIException);
@@ -130,10 +131,7 @@ protected:
   //static void NewImageDataAvailable ( xn::ProductionNode& node, void* cookie );
 
   virtual bool isImageResizeSupported (unsigned input_width, unsigned input_height, unsigned output_width, unsigned output_height) const  throw () = 0;
-  /** \brief returns the focal length for the ir camera in pixels. pixels are assumed to be square.
-   Results depends on the stream resolution.
-   */
-  inline float getNativeDepthFocalLength () const throw ();
+
   void setRegistration (bool on_off) throw (OpenNIException);
   virtual Image* getCurrentImage (const xn::ImageMetaData& image_data) const throw () = 0;
 
@@ -183,29 +181,27 @@ protected:
   bool running_;
 };
 
-float OpenNIDevice::getImageFocalLength () const throw ()
+float OpenNIDevice::getImageFocalLength (int output_x_resolution) const throw ()
 {
-  XnMapOutputMode output_mode;
-  getImageOutputMode (output_mode);
-  return rgb_focal_length_SXGA_ * 1280 / output_mode.nXRes;
+  if (output_x_resolution == 0)
+  {
+    XnMapOutputMode output_mode;
+    getImageOutputMode (output_mode);
+    output_x_resolution = output_mode.nXRes;
+  }
+  float scale = 1280.0f / output_x_resolution;
+  return rgb_focal_length_SXGA_ * scale;
 }
 
-float OpenNIDevice::getDepthFocalLength () const throw ()
+float OpenNIDevice::getDepthFocalLength (int output_x_resolution) const throw ()
 {
-  XnMapOutputMode output_mode;
-  getDepthOutputMode (output_mode);
-  return rgb_focal_length_SXGA_ * 1280 / output_mode.nXRes;
-  if (isDepthRegistered ())
-    return rgb_focal_length_SXGA_ * 1280 / output_mode.nXRes;
-  else
-    return depth_focal_length_SXGA_ * 1280 / output_mode.nXRes;
-}
-
-float OpenNIDevice::getNativeDepthFocalLength () const throw ()
-{
-  XnMapOutputMode outputMode;
-  depth_generator_.GetMapOutputMode (outputMode);
-  double scale = outputMode.nXRes / XN_SXGA_X_RES;
+  if (output_x_resolution == 0)
+  {
+    XnMapOutputMode output_mode;
+    getDepthOutputMode (output_mode);
+    output_x_resolution = output_mode.nXRes;
+  }
+  float scale = 1280.0f / output_x_resolution;
   if (isDepthRegistered ())
     return rgb_focal_length_SXGA_ * scale;
   else

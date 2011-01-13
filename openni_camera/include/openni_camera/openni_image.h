@@ -44,7 +44,8 @@ namespace openni_wrapper
 {
 
 /**
- * @brief Image class containing just a reference to image meta data. Thus this class just provides an interface to fill a RGB or Grayscale image buffer.
+ * @brief Image class containing just a reference to image meta data. Thus this class
+ * just provides an interface to fill a RGB or Grayscale image buffer.
  * @author Suat Gedikli
  * @date 02.january 2011
  * @param image_meta_data
@@ -54,9 +55,12 @@ class Image
 public:
   inline Image (const xn::ImageMetaData& image_meta_data) throw ();
   inline virtual ~Image () throw ();
-  virtual bool isResizingSupported (unsigned input_width, unsigned input_height, unsigned output_width, unsigned output_height) const = 0;
-  virtual void fillRGB (unsigned width, unsigned height, unsigned char* rgb_buffer, unsigned rgb_line_step = 0) const throw (OpenNIException) = 0;
-  virtual void fillGrayscale (unsigned width, unsigned height, unsigned char* gray_buffer, unsigned gray_line_step = 0) const throw (OpenNIException) = 0;
+  virtual bool isResizingSupported (unsigned input_width, unsigned input_height,
+                                    unsigned output_width, unsigned output_height) const = 0;
+  virtual void fillRGB (unsigned width, unsigned height, unsigned char* rgb_buffer,
+                        unsigned rgb_line_step = 0) const throw (OpenNIException) = 0;
+  virtual void fillGrayscale (unsigned width, unsigned height, unsigned char* gray_buffer,
+                              unsigned gray_line_step = 0) const throw (OpenNIException) = 0;
 
   inline unsigned getWidth () const throw ();
   inline unsigned getHeight () const throw ();
