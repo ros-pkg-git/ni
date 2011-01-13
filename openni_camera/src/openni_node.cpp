@@ -43,13 +43,11 @@
 #include <sstream>
 #include <sensor_msgs/image_encodings.h>
 #include <sensor_msgs/fill_image.h>
-#include <image_transport/image_transport.h>
 #include <boost/make_shared.hpp>
 #include <XnContext.h>
-#include <openni_camera/OpenNIConfig.h>
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/CameraInfo.h>
-#include <sensor_msgs/Imu.h>
+//#include <sensor_msgs/Imu.h>
 #include <stereo_msgs/DisparityImage.h>
 
 #include <ros/ros.h>
@@ -58,6 +56,8 @@
 #include <image_transport/image_transport.h>
 #include <dynamic_reconfigure/server.h>
 #include <openni_camera/OpenNIConfig.h>
+#include <pcl_ros/point_cloud.h>
+#include <pcl/point_types.h>
 
 // Branch on whether we have the changes to CameraInfo in unstable
 #if ROS_VERSION_MINIMUM(1, 3, 0)
@@ -74,7 +74,7 @@ namespace openni_camera
 class OpenNINode
 {
 public:
-  //typedef pcl::PointCloud<pcl::PointXYZRGB> PointCloud;
+  typedef pcl::PointCloud<pcl::PointXYZRGB> PointCloud;
   typedef OpenNIConfig Config;
   typedef dynamic_reconfigure::Server<Config> ReconfigureServer;
 
@@ -103,6 +103,7 @@ protected:
   void publishDepthInfo (const DepthImage& depth, ros::Time time);
   void publishDepthImage (const DepthImage& depth, ros::Time time);
   void publishDisparity (const DepthImage& depth, ros::Time time);
+  void publishXYZPointCloud (const DepthImage& depth, ros::Time time);
   
   void configCallback (Config &config, uint32_t level);
   void updateDeviceSettings (const Config &config); /// @todo Not implemented
@@ -117,7 +118,7 @@ protected:
   ros::Publisher pub_rgb_info_, pub_depth_info_;
   image_transport::Publisher pub_rgb_image_, pub_gray_image_, pub_depth_image_;
   ros::Publisher pub_disparity_;
-  ros::Publisher pub_depth_points2_;
+  ros::Publisher pub_point_cloud_;
   bool is_primesense_device_; /// @todo Not used anywhere
 
   string topic_;
@@ -153,7 +154,7 @@ OpenNINode::OpenNINode (NodeHandle comm_nh, NodeHandle param_nh,
   pub_gray_image_  = image_transport.advertise ("rgb/image_mono", 15);
   pub_depth_image_ = image_transport.advertise ("depth/image", 15);
   pub_disparity_   = comm_nh_.advertise<stereo_msgs::DisparityImage > ("depth/disparity", 15);
-  // pub_depth_points2_ = comm_nh.advertise<PointCloud > ("depth/points2", 15);
+  pub_point_cloud_ = comm_nh.advertise<PointCloud > ("depth/points2", 15);
 
   /// @todo Restore image/depth sync code
   //SyncPolicy sync_policy (4); // queue size
@@ -271,6 +272,11 @@ void OpenNINode::depthCallback (const DepthImage& depth, void* cookie)
   // Disparity image
   if (pub_disparity_.getNumSubscribers () > 0)
     publishDisparity (depth, time);
+
+  // Unregistered point cloud
+  /// @todo When config is not for XYZRGB
+  if (pub_point_cloud_.getNumSubscribers () > 0)
+    publishXYZPointCloud(depth, time);
 }
 
 void OpenNINode::publishDepthInfo (const DepthImage& depth, ros::Time time)
@@ -327,6 +333,66 @@ void OpenNINode::publishDisparity (const DepthImage& depth, ros::Time time)
                            disp_msg->image.step);
 
   pub_disparity_.publish (disp_msg);
+}
+
+void OpenNINode::publishXYZPointCloud (const DepthImage& depth, ros::Time time)
+{
+  const xn::DepthMetaData& depth_md = depth.getDepthMetaData ();
+  
+  PointCloud::Ptr cloud_msg = boost::make_shared<PointCloud> ();
+  cloud_msg->header.stamp = time;
+  cloud_msg->height = depth_height_;
+  cloud_msg->width  = depth_width_;
+  cloud_msg->is_dense = false;
+
+  cloud_msg->points.resize(cloud_msg->height * cloud_msg->width);
+  
+  float constant;
+  if (device_->isDepthRegistered ())
+  {
+    constant = 0.001 / device_->getImageFocalLength(depth_width_);
+    cloud_msg->header.frame_id = rgb_frame_id_;
+  }
+  else
+  {
+    constant = 0.001 / device_->getDepthFocalLength(depth_width_);
+    cloud_msg->header.frame_id = depth_frame_id_;
+  }
+
+  unsigned depthStep = depth_md.XRes () / cloud_msg->width;
+  unsigned depthSkip = (depth_md.YRes () / cloud_msg->height - 1) * depth_md.XRes ();
+
+  float centerX = (cloud_msg->width  / 2) - 0.5f;
+  float centerY = (cloud_msg->height / 2) - 0.5f;
+
+  float bad_point = std::numeric_limits<float>::quiet_NaN ();
+  
+  int depth_idx = 0;
+  PointCloud::iterator pt_iter = cloud_msg->begin();
+  for (int v = 0; v < (int)cloud_msg->height; ++v, depth_idx += depthSkip)
+  {
+    for (int u = 0; u < (int)cloud_msg->width; ++u, depth_idx += depthStep, ++pt_iter)
+    {
+      pcl::PointXYZRGB& pt = *pt_iter; //(*cloud_msg)(u, v);
+      
+      // Check for invalid measurements
+      if (depth_md[depth_idx] == 0 ||
+          depth_md[depth_idx] == depth.getNoSampleValue () ||
+          depth_md[depth_idx] == depth.getShadowValue ())
+      {
+        // not valid
+        pt.x = pt.y = pt.z = pt.rgb = bad_point;
+        continue;
+      }
+
+      // Fill in XYZ
+      pt.x = (u - centerX) * depth_md[depth_idx] * constant;
+      pt.y = (v - centerY) * depth_md[depth_idx] * constant;
+      pt.z = depth_md[depth_idx] * 0.001;
+    }
+  }
+
+  pub_point_cloud_.publish (cloud_msg);
 }
 
 int OpenNINode::mapMode (const XnMapOutputMode& output_mode) const
