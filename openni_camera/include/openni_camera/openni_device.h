@@ -172,13 +172,13 @@ protected:
   OpenNIDevice::CallbackHandle image_callback_handle_counter_;
   OpenNIDevice::CallbackHandle depth_callback_handle_counter_;
 
+  bool running_;
   boost::thread image_thread_;
   boost::thread depth_thread_;
   boost::condition_variable image_condition_;
   boost::condition_variable depth_condition_;
   boost::mutex image_mutex_;
   boost::mutex depth_mutex_;
-  bool running_;
 };
 
 float OpenNIDevice::getImageFocalLength (int output_x_resolution) const throw ()

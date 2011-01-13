@@ -75,8 +75,6 @@ class OpenNINode
 {
 public:
   typedef pcl::PointCloud<pcl::PointXYZRGB> PointCloud;
-  typedef OpenNIConfig Config;
-  typedef dynamic_reconfigure::Server<Config> ReconfigureServer;
 
   typedef union
   {
@@ -97,6 +95,9 @@ public:
   void run ();
 
 protected:
+  typedef OpenNIConfig Config;
+  typedef dynamic_reconfigure::Server<Config> ReconfigureServer;
+  
   void imageCallback (const Image& image, void* cookie);
   void depthCallback (const DepthImage& depth, void* cookie);
 
@@ -104,6 +105,8 @@ protected:
   void publishDepthImage (const DepthImage& depth, ros::Time time);
   void publishDisparity (const DepthImage& depth, ros::Time time);
   void publishXYZPointCloud (const DepthImage& depth, ros::Time time);
+  void publishXYZRGBPointCloud (const sensor_msgs::ImageConstPtr& depth_msg,
+                                const sensor_msgs::ImageConstPtr& rgb_msg);
   
   void configCallback (Config &config, uint32_t level);
   void updateDeviceSettings (const Config &config); /// @todo Not implemented
@@ -119,12 +122,20 @@ protected:
   image_transport::Publisher pub_rgb_image_, pub_gray_image_, pub_depth_image_;
   ros::Publisher pub_disparity_;
   ros::Publisher pub_point_cloud_;
-  bool is_primesense_device_; /// @todo Not used anywhere
+
+  // Approximate synchronization for XYZRGB point clouds.
+  typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image,
+                                                          sensor_msgs::Image> SyncPolicy;
+  typedef message_filters::Synchronizer<SyncPolicy> Synchronizer;
+  boost::shared_ptr<Synchronizer> depth_rgb_sync_;
 
   string topic_;
   NodeHandle comm_nh_;
   NodeHandle param_nh_;
+
+  // Dynamic reconfigure
   ReconfigureServer reconfigure_server_;
+  Config config_;
 
   static const string rgb_frame_id_;
   static const string depth_frame_id_;
@@ -156,11 +167,14 @@ OpenNINode::OpenNINode (NodeHandle comm_nh, NodeHandle param_nh,
   pub_disparity_   = comm_nh_.advertise<stereo_msgs::DisparityImage > ("depth/disparity", 15);
   pub_point_cloud_ = comm_nh.advertise<PointCloud > ("depth/points2", 15);
 
-  /// @todo Restore image/depth sync code
-  //SyncPolicy sync_policy (4); // queue size
-  //depth_rgb_sync_.reset (new Synchronizer (sync_policy));
-  //depth_rgb_sync_->registerCallback (boost::bind (&OpenNIDriver::publishXYZRGBPointCloud, this, _1, _2));
-
+#if 0
+  /// @todo Set inter-message lower bound, age penalty, max interval to lower latency
+  SyncPolicy sync_policy (4); // queue size
+  // Connect no inputs, we'll add messages manually
+  depth_rgb_sync_.reset (new Synchronizer (sync_policy));
+  depth_rgb_sync_->registerCallback (boost::bind (&OpenNINode::publishXYZRGBPointCloud,
+                                                  this, _1, _2));
+#endif
 
   /// @todo Is this done in configCallback?
   XnMapOutputMode output_mode;
@@ -180,14 +194,15 @@ OpenNINode::OpenNINode (NodeHandle comm_nh, NodeHandle param_nh,
   //device_->setDepthRegistration (true);
   
   /// @todo Start and stop as needed
-  //device_->startImageStream ();
+  device_->startImageStream ();
   device_->startDepthStream ();
   //device_->startImageStream ();
 }
 
 OpenNINode::~OpenNINode ()
 {
-
+  /// @todo Need to totally stop device here, or can have callbacks invoked after
+  /// we've already started destroying stuff
 }
 
 void OpenNINode::imageCallback (const Image& image, void* cookie)
@@ -275,7 +290,8 @@ void OpenNINode::depthCallback (const DepthImage& depth, void* cookie)
 
   // Unregistered point cloud
   /// @todo When config is not for XYZRGB
-  if (pub_point_cloud_.getNumSubscribers () > 0)
+  if (pub_point_cloud_.getNumSubscribers () > 0 &&
+      config_.point_cloud_type != OpenNI_XYZRGB)
     publishXYZPointCloud(depth, time);
 }
 
@@ -395,6 +411,12 @@ void OpenNINode::publishXYZPointCloud (const DepthImage& depth, ros::Time time)
   pub_point_cloud_.publish (cloud_msg);
 }
 
+void OpenNINode::publishXYZRGBPointCloud (const sensor_msgs::ImageConstPtr& depth_msg,
+                                          const sensor_msgs::ImageConstPtr& rgb_msg)
+{
+
+}
+
 int OpenNINode::mapMode (const XnMapOutputMode& output_mode) const
 {
   if (output_mode.nXRes == 1280 && output_mode.nYRes == 1024)
@@ -463,6 +485,7 @@ unsigned OpenNINode::getFPS (int mode) const
 
 void OpenNINode::configCallback (Config &config, uint32_t level)
 {
+  /// @todo Think this is suppressing the software subsampled resolutions
   // check if image resolution is supported
   XnMapOutputMode output_mode, compatible_mode;
   mapMode (config.image_mode, output_mode);
@@ -509,6 +532,8 @@ void OpenNINode::configCallback (Config &config, uint32_t level)
 
   // now
   /// @todo Registration?
+  /// @todo Make sure in XYZRGB that image res is at least as large as depth res
+  config_ = config;
 }
 
 void OpenNINode::run ()
@@ -533,80 +558,69 @@ int main (int argc, char **argv)
   string topic = "";
   param_nh.getParam ("topic", topic);
 
-  try
+  OpenNIDriver& driver = OpenNIDriver::getInstance ();
+  if (driver.getNumberDevices () == 0)
   {
-    OpenNIDriver& driver = OpenNIDriver::getInstance ();
-    if (driver.getNumberDevices () == 0)
-    {
-      ROS_ERROR ("No devices connected.");
-      exit (-1);
-    }
-    ROS_INFO ("Number devices connected: %d", driver.getNumberDevices ());
+    ROS_ERROR ("No devices connected.");
+    exit (-1);
+  }
+  ROS_INFO ("Number devices connected: %d", driver.getNumberDevices ());
 
-    boost::shared_ptr<OpenNIDevice> device;
-    if (deviceID == "")
+  boost::shared_ptr<OpenNIDevice> device;
+  if (deviceID == "")
+  {
+    ROS_WARN ("%s deviceID is not set! Using first device.", argv[0]);
+    device = driver.getDeviceByIndex (0);
+  }
+  else
+  {
+    if (deviceID.find ('@') != string::npos)
     {
-      ROS_WARN ("%s deviceID is not set! Using first device.", argv[0]);
-      device = driver.getDeviceByIndex (0);
+      cout << "search by address" << endl;
+      size_t pos = deviceID.find ('@');
+      unsigned bus = atoi (deviceID.substr (0, pos).c_str ());
+      unsigned address = atoi (deviceID.substr (pos + 1, deviceID.length () - pos - 1).c_str ());
+      ROS_INFO ("searching for device with bus@address = %d@%d", bus, address);
+      device = driver.getDeviceByAddress (bus, address);
+    }
+    else if (deviceID.length () > 2)
+    {
+      cout << "search by serial number" << endl;
+      ROS_INFO ("searching for device with serial number = %s", deviceID.c_str ());
+      device = driver.getDeviceBySerialNumber (deviceID);
     }
     else
     {
-      if (deviceID.find ('@') != string::npos)
-      {
-        cout << "search by address" << endl;
-        size_t pos = deviceID.find ('@');
-        unsigned bus = atoi (deviceID.substr (0, pos).c_str ());
-        unsigned address = atoi (deviceID.substr (pos + 1, deviceID.length () - pos - 1).c_str ());
-        ROS_INFO ("searching for device with bus@address = %d@%d", bus, address);
-        device = driver.getDeviceByAddress (bus, address);
-      }
-      else if (deviceID.length () > 2)
-      {
-        cout << "search by serial number" << endl;
-        ROS_INFO ("searching for device with serial number = %s", deviceID.c_str ());
-        device = driver.getDeviceBySerialNumber (deviceID);
-      }
-      else
-      {
-        cout << "search by index" << endl;
-        unsigned index = atoi (deviceID.c_str ());
-        ROS_INFO ("searching for device with index = %d", index);
-        device = driver.getDeviceByIndex (index);
-      }
+      cout << "search by index" << endl;
+      unsigned index = atoi (deviceID.c_str ());
+      ROS_INFO ("searching for device with index = %d", index);
+      device = driver.getDeviceByIndex (index);
     }
-
-    if (!device)
-    {
-      ROS_ERROR ("%s No matching device found.", argv[0]);
-      exit (-1);
-    }
-    else
-    {
-      unsigned short vendor_id, product_id;
-      unsigned char bus, address;
-      device->getDeviceInfo (vendor_id, product_id, bus, address);
-
-      string vendor_name = "unknown";
-      if (vendor_id == 0x1d27)
-        vendor_name = "Primesense";
-      else if (vendor_id == 0x45e)
-        vendor_name = "Kinect";
-
-      ROS_INFO ("opened a %s device on bus %d:%d with serial number %s", vendor_name.c_str (), bus, address, device->getSerialNumber ());
-    }
-
-    OpenNINode openni_node (comm_nh, param_nh, device, topic);
-    openni_node.run ();
   }
-  catch (const OpenNIException& exception)
+  
+  if (!device)
   {
-    ROS_ERROR ("%s caught OpenNIException: %s", argv[0], exception.what ());
+    ROS_ERROR ("%s No matching device found.", argv[0]);
     exit (-1);
   }
-  catch (...)
+  else
   {
-    ROS_ERROR ("%s caught unknwon exception: ", argv[0]);
-    exit (-1);
+    unsigned short vendor_id, product_id;
+    unsigned char bus, address;
+    device->getDeviceInfo (vendor_id, product_id, bus, address);
+
+    string vendor_name = "unknown";
+    if (vendor_id == 0x1d27)
+      vendor_name = "Primesense";
+    else if (vendor_id == 0x45e)
+      vendor_name = "Kinect";
+
+    ROS_INFO ("Opened a %s device on bus %d:%d with serial number %s",
+              vendor_name.c_str (), bus, address, device->getSerialNumber ());
   }
+
+  OpenNINode openni_node (comm_nh, param_nh, device, topic);
+  openni_node.run ();
+    
   return (0);
 }

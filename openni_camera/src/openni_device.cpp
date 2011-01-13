@@ -49,12 +49,13 @@ using namespace boost;
 namespace openni_wrapper
 {
 
-OpenNIDevice::OpenNIDevice (xn::Context& context, const xn::NodeInfo& device_node, const xn::NodeInfo& image_node, const xn::NodeInfo& depth_node) throw (OpenNIException)
-: device_node_info_ (device_node)
-, context_ (context)
-, image_thread_ (&OpenNIDevice::ImageDataThreadFunction, this)
-, depth_thread_ (&OpenNIDevice::DepthDataThreadFunction, this)
-, running_ (true)
+OpenNIDevice::OpenNIDevice (xn::Context& context, const xn::NodeInfo& device_node,
+                            const xn::NodeInfo& image_node, const xn::NodeInfo& depth_node) throw (OpenNIException)
+  : device_node_info_ (device_node)
+  , context_ (context)
+  , running_ (true) // Must be initialized before the threads!
+  , image_thread_ (&OpenNIDevice::ImageDataThreadFunction, this)
+  , depth_thread_ (&OpenNIDevice::DepthDataThreadFunction, this)
 {
   // create the production nodes
   XnStatus status = context_.CreateProductionTree (const_cast<xn::NodeInfo&>(depth_node));
