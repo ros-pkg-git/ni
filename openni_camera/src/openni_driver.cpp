@@ -508,19 +508,17 @@ void OpenNIDriver::publishXYZRGBPointCloud ( const sensor_msgs::ImageConstPtr& d
           depth_md[depth_idx] == shadow_value_)
       {
         // not valid
-        pt.x = bad_point;
-        pt.y = bad_point;
-        pt.z = bad_point;
-        pt.rgb = bad_point;
-        continue;
+        pt.x = pt.y = pt.z = bad_point;
+      }
+      else
+      {
+        // Fill in XYZ
+        pt.x = (u - centerX) * depth_md[depth_idx] * constant;
+        pt.y = (v - centerY) * depth_md[depth_idx] * constant;
+        pt.z = depth_md[depth_idx] * 0.001;
       }
 
-      // Fill in XYZ
-      pt.x = (u - centerX) * depth_md[depth_idx] * constant;
-      pt.y = (v - centerY) * depth_md[depth_idx] * constant;
-      pt.z = depth_md[depth_idx] * 0.001;
-
-      // Fill in color
+      // Fill in color (whether valid or invalid)
       color.Red   = rgb_buffer[color_idx];
       color.Green = rgb_buffer[color_idx + 1];
       color.Blue  = rgb_buffer[color_idx + 2];
@@ -771,8 +769,9 @@ bool OpenNIDriver::updateDeviceSettings()
   depth_info_.header.frame_id = IR_frame_id_;
 
   // got baseline update disparity image
+  disp_image_.image.encoding = sensor_msgs::image_encodings::TYPE_32FC1;
   disp_image_.T = baseline_;
-  disp_image_.f  = depth_focal_length_VGA_;
+  disp_image_.f = depth_focal_length_VGA_;
   /// @todo Compute these values from DepthGenerator::GetDeviceMaxDepth() and the like
   disp_image_.min_disparity = 0.0;
   disp_image_.max_disparity = disp_image_.T * disp_image_.f / 0.3;
