@@ -456,14 +456,15 @@ void OpenNINode::publishXYZRGBPointCloud (const sensor_msgs::ImageConstPtr& dept
       // Check for invalid measurements
       if (std::isnan(Z))
       {
-        pt.x = pt.y = pt.z = pt.rgb = Z;
-        continue;
+        pt.x = pt.y = pt.z = Z;
       }
-
-      // Fill in XYZ
-      pt.x = (u - centerX) * Z * constant;
-      pt.y = (v - centerY) * Z * constant;
-      pt.z = Z;
+      else
+      {
+        // Fill in XYZ
+        pt.x = (u - centerX) * Z * constant;
+        pt.y = (v - centerY) * Z * constant;
+        pt.z = Z;
+      }
 
       // Fill in color
       RGBValue color;
