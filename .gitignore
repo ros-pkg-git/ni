@@ -1,0 +1,8 @@
+bin
+build
+lib
+rospack_nosubdirs
+installed
+docs
+cfg
+
