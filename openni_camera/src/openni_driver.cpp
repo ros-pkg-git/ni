@@ -789,8 +789,9 @@ bool OpenNIDriver::updateDeviceSettings()
   rgb_info_.P.assign( 0.0 );
 
   rgb_info_.K[0] = rgb_info_.K[4] = rgb_focal_length_VGA_ * (double)image_width / 640.0;
-  rgb_info_.K[2] = image_width >> 1;
-  rgb_info_.K[5] = image_height >> 1;
+  //set the camera center so that it is consistent with the depth_image center
+  rgb_info_.K[2] = (depth_info_.width * (double)image_width / 640.0) / 2.0; 
+  rgb_info_.K[5] = (depth_info_.height * (double)image_width / 640.0) / 2.0;
   rgb_info_.K[8] = 1.0;
 
   // no rotation: identity
