@@ -42,7 +42,7 @@
 #define OPENNI_NODE_OPENNI_H_
 
 #include <boost/thread/mutex.hpp>
-
+#include <Eigen3/Core>
 // ROS messages
 #include <sensor_msgs/PointCloud.h>
 #include <sensor_msgs/PointCloud2.h>
@@ -189,6 +189,8 @@ namespace openni_camera
 
       /** \brief frame_id of IR camera coordinate system */
       static const std::string IR_frame_id_;
+    public:
+      EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
   };
 
   bool OpenNIDriver::isRGBRequired() const

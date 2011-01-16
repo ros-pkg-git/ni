@@ -65,6 +65,8 @@ namespace openni_camera
       OpenNIDriver* driver_;
   
       boost::thread* spinthread_;
+    public:
+      EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
   };
 }
 
