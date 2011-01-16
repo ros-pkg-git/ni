@@ -1,5 +1,6 @@
 libusb1.0:
   ubuntu: libusb-1.0-0-dev
+  macports: "libusb-devel +universal"
 git:
   ubuntu: git-core
   debian: git-core
@@ -7,3 +8,6 @@ git:
   macports: git-core
   gentoo: dev-vcs/git
   freebsd: git
+sed:
+  ubuntu: sed
+  macports: gsed
