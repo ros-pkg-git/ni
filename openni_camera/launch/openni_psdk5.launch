@@ -3,6 +3,7 @@
     <!--remap from="camera" to="openni" /-->
     <param name="registration_type" value="1" />
     <param name="image_input_format" value="5" />
+    <param name="device_type" value="0" />
     <rosparam command="load" file="$(find openni_camera)/info/openni_params.yaml" />
   </node>
 </launch>
