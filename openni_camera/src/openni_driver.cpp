@@ -403,7 +403,8 @@ void OpenNIDriver::publishDisparity ( const xn::DepthMetaData& depth_md, ros::Ti
 
 void OpenNIDriver::publishXYZPointCloud ( const xn::DepthMetaData& depth_md, ros::Time time ) const
 {
-  PointCloud::Ptr cloud_out = boost::make_shared<PointCloud> ();
+  PointCloud::Ptr cloud_out;
+  cloud_out.reset (new PointCloud ());
   cloud_out->header = cloud2_.header;
   cloud_out->height = cloud2_.height;
   cloud_out->width = cloud2_.width;
@@ -463,7 +464,8 @@ void OpenNIDriver::publishXYZPointCloud ( const xn::DepthMetaData& depth_md, ros
 void OpenNIDriver::publishXYZRGBPointCloud ( const sensor_msgs::ImageConstPtr& depth_msg,
                                              const sensor_msgs::ImageConstPtr& rgb_msg ) const
 {
-  PointCloud::Ptr cloud_out = boost::make_shared<PointCloud> ();
+  PointCloud::Ptr cloud_out;
+  cloud_out.reset (new PointCloud ());
   cloud_out->header = cloud2_.header;
   cloud_out->height = cloud2_.height;
   cloud_out->width = cloud2_.width;
