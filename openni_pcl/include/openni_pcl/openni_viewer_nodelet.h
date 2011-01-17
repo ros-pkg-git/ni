@@ -69,6 +69,8 @@ namespace openni_pcl
 
       /** \brief Mutex. */
       boost::mutex mutex_;
+    public:
+      EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
   };
 }
 
