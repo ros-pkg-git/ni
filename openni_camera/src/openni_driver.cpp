@@ -56,8 +56,6 @@ using namespace std;
 
 namespace openni_camera 
 {
-typedef pcl::PointCloud<pcl::PointXYZRGB> PointCloud;
-
 // Suat: This magic number is the focal length of the RGB camera and comes from our Primesense/Kinect calibration routine.
 const double OpenNIDriver::rgb_focal_length_VGA_ = 525;
 const string OpenNIDriver::rgb_frame_id_ = "openni_rgb_optical_frame";
@@ -111,7 +109,7 @@ OpenNIDriver::OpenNIDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   pub_gray_    = it.advertiseCamera ("rgb/image_mono", 15);
   pub_depth_image_ = it.advertiseCamera ("depth/image", 15);
   pub_disparity_ = comm_nh_.advertise<stereo_msgs::DisparityImage>("depth/disparity", 15 );
-  pub_depth_points2_ = comm_nh.advertise<PointCloud >("depth/points2", 15);
+  pub_depth_points2_ = comm_nh.advertise<pcl::PointCloud<pcl::PointXYZRGB> >("depth/points2", 15);
 
   SyncPolicy sync_policy(4); // queue size
   /// @todo Set inter-message lower bound, age penalty, max interval to lower latency
@@ -401,38 +399,38 @@ void OpenNIDriver::publishDisparity ( const xn::DepthMetaData& depth_md, ros::Ti
   pub_disparity_.publish ( disp_image_ );
 }
 
-void OpenNIDriver::publishXYZPointCloud ( const xn::DepthMetaData& depth_md, ros::Time time ) const
+void 
+OpenNIDriver::publishXYZPointCloud (const xn::DepthMetaData& depth_md, ros::Time time) const
 {
-  PointCloud::Ptr cloud_out;
-  cloud_out.reset (new PointCloud ());
-  cloud_out->header = cloud2_.header;
-  cloud_out->height = cloud2_.height;
-  cloud_out->width = cloud2_.width;
-  cloud_out->is_dense = cloud2_.is_dense;
+  pcl::PointCloud<pcl::PointXYZ> cloud_out;
+  cloud_out.header = cloud2_.header;
+  cloud_out.height = cloud2_.height;
+  cloud_out.width = cloud2_.width;
+  cloud_out.is_dense = cloud2_.is_dense;
 
-  cloud_out->points.resize(cloud_out->height * cloud_out->width);
+  cloud_out.points.resize(cloud_out.height * cloud_out.width);
 
   float bad_point = std::numeric_limits<float>::quiet_NaN ();
   int depth_idx = 0;
   
   float constant;
-  if( config_.point_cloud_type == OpenNI_XYZ_unregistered)
+  if (config_.point_cloud_type == OpenNI_XYZ_unregistered)
     constant = 0.001 / depth_focal_length_VGA_;
   else
     constant = 0.001 / rgb_focal_length_VGA_;
 
-  unsigned depthStep = depth_md.XRes () / cloud_out->width;
-  unsigned depthSkip = (depth_md.YRes () / cloud_out->height - 1) * depth_md.XRes ();
+  unsigned depth_step = depth_md.XRes () / cloud_out.width;
+  unsigned depth_skip = (depth_md.YRes () / cloud_out.height - 1) * depth_md.XRes ();
 
-  int centerX = cloud_out->width >> 1;
-  int centerY = cloud_out->height >> 1;
-  constant *= depthStep;
+  int centerX = cloud_out.width >> 1;
+  int centerY = cloud_out.height >> 1;
+  constant *= depth_step;
 
-  for (int v = 0; v < (int)cloud_out->height; ++v, depth_idx += depthSkip)
+  for (int v = 0; v < (int)cloud_out.height; ++v, depth_idx += depth_skip)
   {
-    for (int u = 0; u < (int)cloud_out->width; ++u, depth_idx += depthStep)
+    for (int u = 0; u < (int)cloud_out.width; ++u, depth_idx += depth_step)
     {
-      pcl::PointXYZRGB& pt = (*cloud_out)(u, v);
+      pcl::PointXYZ& pt = cloud_out(u, v);
       
       // Check for invalid measurements
       if (depth_md[depth_idx] == 0 ||
@@ -443,7 +441,6 @@ void OpenNIDriver::publishXYZPointCloud ( const xn::DepthMetaData& depth_md, ros
         pt.x = bad_point;
         pt.y = bad_point;
         pt.z = bad_point;
-        pt.rgb = bad_point;
         continue;
       }
 
@@ -454,43 +451,43 @@ void OpenNIDriver::publishXYZPointCloud ( const xn::DepthMetaData& depth_md, ros
     }
   }
 
-  cloud_out->header.frame_id = disp_image_.header.frame_id;
-  cloud_out->header.seq = depth_md.FrameID();
-  cloud_out->header.stamp = time;
+  cloud_out.header.frame_id = disp_image_.header.frame_id;
+  cloud_out.header.seq = depth_md.FrameID ();
+  cloud_out.header.stamp = time;
 
-  pub_depth_points2_.publish (cloud_out);
+  pub_depth_points2_.publish (cloud_out.makeShared ());
 }
 
-void OpenNIDriver::publishXYZRGBPointCloud ( const sensor_msgs::ImageConstPtr& depth_msg,
-                                             const sensor_msgs::ImageConstPtr& rgb_msg ) const
+void 
+OpenNIDriver::publishXYZRGBPointCloud (const sensor_msgs::ImageConstPtr& depth_msg,
+                                       const sensor_msgs::ImageConstPtr& rgb_msg) const
 {
-  PointCloud::Ptr cloud_out;
-  cloud_out.reset (new PointCloud ());
-  cloud_out->header = cloud2_.header;
-  cloud_out->height = cloud2_.height;
-  cloud_out->width = cloud2_.width;
-  cloud_out->is_dense = cloud2_.is_dense;
+  pcl::PointCloud<pcl::PointXYZRGB> cloud_out;
+  cloud_out.header = cloud2_.header;
+  cloud_out.height = cloud2_.height;
+  cloud_out.width = cloud2_.width;
+  cloud_out.is_dense = cloud2_.is_dense;
 
-  cloud_out->points.resize(cloud_out->height * cloud_out->width);
+  cloud_out.points.resize (cloud_out.height * cloud_out.width);
   
   float bad_point = std::numeric_limits<float>::quiet_NaN ();
   int depth_idx = 0;
   float constant = 0.001 / rgb_focal_length_VGA_;
 
-  unsigned depthStep = depth_msg->width / cloud_out->width;
-  unsigned depthSkip = (depth_msg->height / cloud_out->height - 1) * depth_msg->width;
+  unsigned depth_step = depth_msg->width / cloud_out.width;
+  unsigned depth_skip = (depth_msg->height / cloud_out.height - 1) * depth_msg->width;
 
   int centerX = cloud2_.width >> 1;
   int centerY = cloud2_.height >> 1;
-  constant *= depthStep;
+  constant *= depth_step;
 
   unsigned char* rgb_buffer = (unsigned char*)&rgb_image_.data[0];
   RGBValue color;
   color.Alpha = 0;
 
   int color_idx = 0;
-  unsigned colorStep = 3 * rgb_image_.width / cloud_out->width;
-  unsigned colorSkip = 3 * (rgb_image_.height / cloud_out->height - 1) * rgb_image_.width;
+  unsigned color_step = 3 * rgb_image_.width / cloud_out.width;
+  unsigned color_skip = 3 * (rgb_image_.height / cloud_out.height - 1) * rgb_image_.width;
 
   /// @todo Right now we always copy the raw depth data into a sensor_msgs/Image. In principle this
   /// isn't completely avoidable, as the synchronizer may wait for the next depth image before choosing
@@ -498,11 +495,11 @@ void OpenNIDriver::publishXYZRGBPointCloud ( const sensor_msgs::ImageConstPtr& d
   /// this almost always.
   const uint16_t* depth_md = reinterpret_cast<const uint16_t*>(&depth_msg->data[0]);
 
-  for (int v = 0; v < (int)cloud_out->height; ++v, depth_idx += depthSkip, color_idx += colorSkip)
+  for (int v = 0; v < (int)cloud_out.height; ++v, depth_idx += depth_skip, color_idx += color_skip)
   {
-    for (int u = 0; u < (int)cloud_out->width; ++u, depth_idx += depthStep, color_idx += colorStep)
+    for (int u = 0; u < (int)cloud_out.width; ++u, depth_idx += depth_step, color_idx += color_step)
     {
-      pcl::PointXYZRGB& pt = (*cloud_out)(u, v);
+      pcl::PointXYZRGB& pt = cloud_out (u, v);
       
       // Check for invalid measurements
       if (depth_md[depth_idx] == 0 ||
@@ -528,11 +525,11 @@ void OpenNIDriver::publishXYZRGBPointCloud ( const sensor_msgs::ImageConstPtr& d
     }
   }
 
-  cloud_out->header.stamp = max( depth_msg->header.stamp, rgb_msg->header.stamp );
-  cloud_out->header.frame_id = rgb_msg->header.frame_id;
-  cloud_out->header.seq = max( depth_msg->header.seq, rgb_msg->header.seq );
+  cloud_out.header.stamp = max (depth_msg->header.stamp, rgb_msg->header.stamp);
+  cloud_out.header.frame_id = rgb_msg->header.frame_id;
+  cloud_out.header.seq = max (depth_msg->header.seq, rgb_msg->header.seq);
 
-  pub_depth_points2_.publish (cloud_out);
+  pub_depth_points2_.publish (cloud_out.makeShared ());
 }
 
 void OpenNIDriver::configCb (Config &config, uint32_t level)
