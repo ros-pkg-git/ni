@@ -100,10 +100,8 @@ void OpenNIDevice::Init () throw (OpenNIException)
   // set Depth resolution here only once... since no other mode for kinect is available -> deactivating setDepthResolution method!
   XnMapOutputMode output_mode;
   getDefaultDepthMode (output_mode);
-  cout << "setting depth output mode to: " << output_mode.nXRes << " x " << output_mode.nYRes << " @ " << output_mode.nFPS << "Hz" << endl;
   setDepthOutputMode (output_mode);
   getDefaultImageMode (output_mode);
-  cout << "setting depth output mode to: " << output_mode.nXRes << " x " << output_mode.nYRes << " @ " << output_mode.nFPS << "Hz" << endl;
   setImageOutputMode (output_mode);
 
   XnDouble pixel_size;

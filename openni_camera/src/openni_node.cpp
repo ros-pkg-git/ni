@@ -90,7 +90,8 @@ public:
     long long_value;
   } RGBValue;
 public:
-  OpenNINode (NodeHandle comm_nh, NodeHandle param_nh, boost::shared_ptr<OpenNIDevice> device, const string& topic);
+  OpenNINode (NodeHandle comm_nh, NodeHandle param_nh,
+              const boost::shared_ptr<OpenNIDevice>& device);
   ~OpenNINode ();
   void run ();
 
@@ -116,11 +117,17 @@ protected:
   int mapMode (const XnMapOutputMode& output_mode) const;
   void mapMode (int mode, XnMapOutputMode& output_mode) const;
   unsigned getFPS (int mode) const;
+  
   unsigned image_width_;
   unsigned image_height_;
   unsigned depth_width_;
   unsigned depth_height_;
+  
+  string rgb_frame_id_;
+  string depth_frame_id_;
+  
   boost::shared_ptr<OpenNIDevice> device_;
+  
   ros::Publisher pub_rgb_info_, pub_depth_info_;
   image_transport::Publisher pub_rgb_image_, pub_gray_image_, pub_depth_image_;
   ros::Publisher pub_disparity_;
@@ -132,42 +139,32 @@ protected:
   typedef message_filters::Synchronizer<SyncPolicy> Synchronizer;
   boost::shared_ptr<Synchronizer> depth_rgb_sync_;
 
-  string topic_;
-  NodeHandle comm_nh_;
-  NodeHandle param_nh_;
-
   // Dynamic reconfigure
   ReconfigureServer reconfigure_server_;
   Config config_;
-
-  static const string rgb_frame_id_;
-  static const string depth_frame_id_;
 };
 
-/// @todo These need to be parameters
-const string OpenNINode::rgb_frame_id_ = "openni_rgb_optical_frame";
-const string OpenNINode::depth_frame_id_ = "openni_depth_optical_frame";
 
 OpenNINode::OpenNINode (NodeHandle comm_nh, NodeHandle param_nh,
-                        boost::shared_ptr<OpenNIDevice> device, const string& topic)
+                        const boost::shared_ptr<OpenNIDevice>& device)
   : device_ (device)
-  , topic_ (topic)
-  , comm_nh_ (comm_nh)
-  , param_nh_ (param_nh)
   , reconfigure_server_ (param_nh)
 {
   ReconfigureServer::CallbackType reconfigure_callback =
     boost::bind (&OpenNINode::configCallback, this, _1, _2);
   reconfigure_server_.setCallback (reconfigure_callback);
 
+  param_nh.param("rgb_frame_id", rgb_frame_id_, string("openni_rgb_optical_frame"));
+  param_nh.param("depth_frame_id", depth_frame_id_, string("openni_depth_optical_frame"));
+
   image_transport::ImageTransport image_transport (comm_nh);
   /// @todo 15 looks like overkill for the queue size
-  pub_rgb_info_    = comm_nh_.advertise<sensor_msgs::CameraInfo> ("rgb/camera_info", 15);
-  pub_depth_info_  = comm_nh_.advertise<sensor_msgs::CameraInfo> ("depth/camera_info", 15);
+  pub_rgb_info_    = comm_nh.advertise<sensor_msgs::CameraInfo> ("rgb/camera_info", 15);
+  pub_depth_info_  = comm_nh.advertise<sensor_msgs::CameraInfo> ("depth/camera_info", 15);
   pub_rgb_image_   = image_transport.advertise ("rgb/image_color", 15);
   pub_gray_image_  = image_transport.advertise ("rgb/image_mono", 15);
   pub_depth_image_ = image_transport.advertise ("depth/image", 15);
-  pub_disparity_   = comm_nh_.advertise<stereo_msgs::DisparityImage > ("depth/disparity", 15);
+  pub_disparity_   = comm_nh.advertise<stereo_msgs::DisparityImage > ("depth/disparity", 15);
   pub_point_cloud_ = comm_nh.advertise<PointCloud > ("depth/points2", 15);
 
   /// @todo Set inter-message lower bound, age penalty, max interval to lower latency
@@ -604,7 +601,6 @@ void OpenNINode::configCallback (Config &config, uint32_t level)
 
 void OpenNINode::run ()
 {
-  //while (comm_nh_.ok ());
   ros::spin();
 }
 
@@ -617,12 +613,10 @@ int main (int argc, char **argv)
   // Init ROS
   init (argc, argv, "openni_node");
 
-  NodeHandle comm_nh ("openni_camera"); // for topics, services
+  NodeHandle comm_nh ("camera"); // for topics, services
   NodeHandle param_nh ("~"); // for parameters
-  string device_id = "";
-  param_nh.getParam ("device_id", device_id);
-  string topic = "";
-  param_nh.getParam ("topic", topic);
+  string device_id;
+  param_nh.param ("device_id", device_id, std::string());
 
   OpenNIDriver& driver = OpenNIDriver::getInstance ();
   if (driver.getNumberDevices () == 0)
@@ -682,7 +676,7 @@ int main (int argc, char **argv)
               vendor_name.c_str (), bus, address, device->getSerialNumber ());
   }
 
-  OpenNINode openni_node (comm_nh, param_nh, device, topic);
+  OpenNINode openni_node (comm_nh, param_nh, device);
   openni_node.run ();
     
   return (0);
