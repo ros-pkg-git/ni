@@ -619,8 +619,8 @@ int main (int argc, char **argv)
 
   NodeHandle comm_nh ("openni_camera"); // for topics, services
   NodeHandle param_nh ("~"); // for parameters
-  string deviceID = "";
-  param_nh.getParam ("deviceID", deviceID);
+  string device_id = "";
+  param_nh.getParam ("device_id", device_id);
   string topic = "";
   param_nh.getParam ("topic", topic);
 
@@ -633,34 +633,31 @@ int main (int argc, char **argv)
   ROS_INFO ("Number devices connected: %d", driver.getNumberDevices ());
 
   boost::shared_ptr<OpenNIDevice> device;
-  if (deviceID == "")
+  if (device_id.empty())
   {
-    ROS_WARN ("%s deviceID is not set! Using first device.", argv[0]);
+    ROS_WARN ("%s device_id is not set! Using first device.", argv[0]);
     device = driver.getDeviceByIndex (0);
   }
   else
   {
-    if (deviceID.find ('@') != string::npos)
+    if (device_id.find ('@') != string::npos)
     {
-      cout << "search by address" << endl;
-      size_t pos = deviceID.find ('@');
-      unsigned bus = atoi (deviceID.substr (0, pos).c_str ());
-      unsigned address = atoi (deviceID.substr (pos + 1, deviceID.length () - pos - 1).c_str ());
+      size_t pos = device_id.find ('@');
+      unsigned bus = atoi (device_id.substr (0, pos).c_str ());
+      unsigned address = atoi (device_id.substr (pos + 1, device_id.length () - pos - 1).c_str ());
       ROS_INFO ("searching for device with bus@address = %d@%d", bus, address);
       device = driver.getDeviceByAddress (bus, address);
     }
-    else if (deviceID.length () > 2)
+    else if (device_id[0] == '#')
     {
-      cout << "search by serial number" << endl;
-      ROS_INFO ("searching for device with serial number = %s", deviceID.c_str ());
-      device = driver.getDeviceBySerialNumber (deviceID);
+      unsigned index = atoi (device_id.c_str () + 1);
+      ROS_INFO ("searching for device with index = %d", index);
+      device = driver.getDeviceByIndex (index - 1);
     }
     else
     {
-      cout << "search by index" << endl;
-      unsigned index = atoi (deviceID.c_str ());
-      ROS_INFO ("searching for device with index = %d", index);
-      device = driver.getDeviceByIndex (index);
+      ROS_INFO ("searching for device with serial number = %s", device_id.c_str ());
+      device = driver.getDeviceBySerialNumber (device_id);
     }
   }
   
