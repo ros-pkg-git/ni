@@ -95,7 +95,7 @@ void publishTransform(XnUserID const& user, XnSkeletonJoint const& joint, string
     XnSkeletonJointPosition joint_position;
     g_UserGenerator.GetSkeletonCap().GetSkeletonJointPosition(user, joint, joint_position);
     double x = joint_position.position.X / 1000.0;
-    double y = joint_position.position.Y / 1000.0;
+    double y = -joint_position.position.Y / 1000.0;
     double z = joint_position.position.Z / 1000.0;
 
     XnSkeletonJointOrientation joint_orientation;
@@ -124,7 +124,7 @@ void publishTransforms() {
         if (!g_UserGenerator.GetSkeletonCap().IsTracking(user))
             continue;
 
-        string frame_id("openni_depth");
+        string frame_id("openni_depth_optical_frame");
 
         publishTransform(user, XN_SKEL_HEAD,           frame_id, "head");
         publishTransform(user, XN_SKEL_NECK,           frame_id, "neck");
