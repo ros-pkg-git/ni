@@ -1,7 +1,9 @@
 /*
  * Software License Agreement (BSD License)
  *
- *  Copyright (c) 2010, Kei Okada <k-okada@jsk.t.u-tokyo.ac.jp>, 
+ *  Copyright (c) 2010,
+ *    Kei Okada <k-okada@jsk.t.u-tokyo.ac.jp>
+ *    Yohei Kakiuchi <youhei@jsk.t.u-tokyo.ac.jp>
  *
  *  All rights reserved.
  *
