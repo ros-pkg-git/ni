@@ -770,7 +770,7 @@ bool OpenNIDriver::updateDeviceSettings()
   // got baseline update disparity image
   disp_image_.image.encoding = sensor_msgs::image_encodings::TYPE_32FC1;
   disp_image_.T = baseline_;
-  disp_image_.f = depth_focal_length_VGA_;
+  
   /// @todo Compute these values from DepthGenerator::GetDeviceMaxDepth() and the like
   disp_image_.min_disparity = 0.0;
   disp_image_.max_disparity = disp_image_.T * disp_image_.f / 0.3;
@@ -874,6 +874,7 @@ bool OpenNIDriver::updateDeviceSettings()
 
     // unregistered -> all depth information are in the IR camera coordinate system
     disp_image_.header.frame_id = IR_frame_id_;
+    disp_image_.f = depth_focal_length_VGA_;
   }
   else
   {
@@ -887,6 +888,7 @@ bool OpenNIDriver::updateDeviceSettings()
     // registered => all depth information are in the RGB camera coordinate system, as well as the camera parameters from RGB are valid for the depth image
     depth_info_ = rgb_info_;
     disp_image_.header.frame_id = rgb_frame_id_;
+    disp_image_.f = rgb_focal_length_VGA_;
   }
 
   return true;
