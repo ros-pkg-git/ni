@@ -46,6 +46,7 @@
 #include <map>
 
 using namespace std;
+using namespace boost;
 
 namespace openni_wrapper
 {
@@ -57,61 +58,81 @@ OpenNIDriver::OpenNIDriver () throw (OpenNIException)
   if (status != XN_STATUS_OK)
     THROW_OPENNI_EXCEPTION ("initialization failed. Reason: %s", xnGetStatusString (status));
 
-  updateDeviceList ();
-}
-
-void OpenNIDriver::updateDeviceList () throw (OpenNIException)
-{
-  // clear current list
-  device_info_.clear ();
-  depth_info_.clear ();
-  image_info_.clear ();
+  // clear current list of devices
+  device_context_.clear ();
+  // clear maps
   bus_map_.clear ();
   serial_map_.clear ();
 
   // enumerate all devices
   static xn::NodeInfoList node_info_list;
-  XnStatus status = context_.EnumerateProductionTrees (XN_NODE_TYPE_DEVICE, NULL, node_info_list);
+  status = context_.EnumerateProductionTrees (XN_NODE_TYPE_DEVICE, NULL, node_info_list);
   if (status != XN_STATUS_OK && node_info_list.Begin () != node_info_list.End ())
     THROW_OPENNI_EXCEPTION ("enumerating devices failed. Reason: %s", xnGetStatusString (status));
   else if (node_info_list.Begin () == node_info_list.End ())
-    THROW_OPENNI_EXCEPTION ("no compatible device found");
+    return; // no exception
+    //THROW_OPENNI_EXCEPTION ("no compatible device found");
 
+  vector<xn::NodeInfo> device_info;
   for (xn::NodeInfoList::Iterator nodeIt = node_info_list.Begin (); nodeIt != node_info_list.End (); ++nodeIt)
   {
-    device_info_.push_back (*nodeIt);
+    device_info.push_back (*nodeIt);
   }
 
-  // create a depth generator for each device
+  // enumerate depth nodes
   static xn::NodeInfoList depth_nodes;
   status = context_.EnumerateProductionTrees (XN_NODE_TYPE_DEPTH, NULL, depth_nodes, NULL);
   if (status != XN_STATUS_OK)
     THROW_OPENNI_EXCEPTION ("enumerating depth generators failed. Reason: %s", xnGetStatusString (status));
 
+  vector<xn::NodeInfo> depth_info;
   for (xn::NodeInfoList::Iterator nodeIt = depth_nodes.Begin (); nodeIt != depth_nodes.End (); ++nodeIt)
   {
-    depth_info_.push_back (*nodeIt);
+    depth_info.push_back (*nodeIt);
   }
 
-  // create image stream
+  // enumerate image nodes
   static xn::NodeInfoList image_nodes;
-  //xn::Query query;
-  //query.AddSupportedCapability()
   status = context_.EnumerateProductionTrees (XN_NODE_TYPE_IMAGE, NULL, image_nodes, NULL);
   if (status != XN_STATUS_OK)
     THROW_OPENNI_EXCEPTION ("enumerating image generators failed. Reason: %s", xnGetStatusString (status));
 
+  vector<xn::NodeInfo> image_info;
   for (xn::NodeInfoList::Iterator nodeIt = image_nodes.Begin (); nodeIt != image_nodes.End (); ++nodeIt)
   {
-    image_info_.push_back (*nodeIt);
+    image_info.push_back (*nodeIt);
   }
 
   // check if we have same number of streams as devices!
-  if (device_info_.size () != depth_info_.size () || device_info_.size () != image_info_.size ())
-    THROW_OPENNI_EXCEPTION ("number of streams and devices does not match: %d devices, %d depth streams, %d image streams", device_info_.size (), depth_info_.size (), image_info_.size ());
+  if (device_info.size () != depth_info.size () || device_info.size () != image_info.size ())
+    THROW_OPENNI_EXCEPTION ("number of streams and devices does not match: %d devices, %d depth streams, %d image streams",
+                            device_info.size (), depth_info.size (), image_info.size ());
 
-  // Hack to get serial numbers of devices. this is not done in the driver yet
-  getDeviceInfo ();
+  // add context object for each found device
+  for (unsigned deviceIdx = 0; deviceIdx < device_info.size (); ++deviceIdx)
+  {
+    // add context object for device
+    device_context_.push_back (DeviceContext(device_info[deviceIdx], image_info[deviceIdx], depth_info[deviceIdx]));
+
+    // register bus@address to the corresponding context object
+    unsigned short vendor_id;
+    unsigned short product_id;
+    unsigned char bus;
+    unsigned char address;
+    sscanf (device_info[deviceIdx].GetCreationInfo (), "%hx/%hx@%hhu/%hhu", &vendor_id, &product_id, &bus, &address);
+    bus_map_ [bus][address] = deviceIdx;
+  }
+
+  // get additional info about connected devices like serial number, vendor name and prduct name
+  getDeviceInfos ();
+
+  // build serial number -> device index map
+  for (unsigned deviceIdx = 0; deviceIdx < device_info.size (); ++deviceIdx)
+  {
+    string serial_number = getSerialNumber (deviceIdx);
+    if (!serial_number.empty () )
+      serial_map_[serial_number] = deviceIdx;
+  }
 }
 
 void OpenNIDriver::stopAll () throw (OpenNIException)
@@ -123,77 +144,83 @@ void OpenNIDriver::stopAll () throw (OpenNIException)
 
 OpenNIDriver::~OpenNIDriver () throw ()
 {
-  stopAll ();
+  // no exception during destuctor
+  try
+  {
+    stopAll ();
+  }
+  catch (...)
+  {}
+  
   context_.Shutdown ();
 }
 
-boost::shared_ptr<OpenNIDevice> OpenNIDriver::createDevice (unsigned deviceIdx) const throw (OpenNIException)
+shared_ptr<OpenNIDevice> OpenNIDriver::getDeviceByIndex (unsigned index) const throw (OpenNIException)
 {
-  string connection_string = device_info_[deviceIdx].GetCreationInfo ();
-  transform (connection_string.begin (), connection_string.end (), connection_string.begin (), std::towlower);
-  if (connection_string.substr (0, 4) == "045e")
-  {
-    DeviceKinect* device = new DeviceKinect (context_, device_info_[deviceIdx], image_info_[deviceIdx], depth_info_[deviceIdx]);
-    return boost::shared_ptr<OpenNIDevice > (device);
-  }
-  else if (connection_string.substr (0, 4) == "1d27")
-  {
-    DevicePrimesense* device = new DevicePrimesense (context_, device_info_[deviceIdx], image_info_[deviceIdx], depth_info_[deviceIdx]);
-    return boost::shared_ptr<OpenNIDevice > (device);
-  }
-  else
-    THROW_OPENNI_EXCEPTION ("vecndor %s known by primesense driver, but not by ros driver. Contact maintainer of the ros driver.");
+  if (index > device_context_.size ())
+    THROW_OPENNI_EXCEPTION ("device index out of range. only %d devices connected but device %d requested.", device_context_.size (), index );
 
-  return boost::shared_ptr<OpenNIDevice > ((OpenNIDevice*)NULL);
+  shared_ptr<OpenNIDevice> device = device_context_[index].device.lock ();
+  if (!device)
+  {
+    string connection_string = device_context_[index].device_node.GetCreationInfo ();
+    transform (connection_string.begin (), connection_string.end (), connection_string.begin (), std::towlower);
+    if (connection_string.substr (0,4) == "045e")
+    {
+      device = boost::shared_ptr<OpenNIDevice > (new DeviceKinect (context_, device_context_[index].device_node,
+                                                 device_context_[index].image_node, device_context_[index].depth_node));
+      device_context_[index].device = device;
+    }
+    else if (connection_string.substr (0,4) == "1d27")
+    {
+      device = boost::shared_ptr<OpenNIDevice > (new DevicePrimesense (context_, device_context_[index].device_node,
+                                                 device_context_[index].image_node, device_context_[index].depth_node));
+      device_context_[index].device = device;
+    }
+    else
+    {
+      THROW_OPENNI_EXCEPTION ("vendor %s (%s) known by primesense driver, but not by ros driver. Contact maintainer of the ros driver.",
+                              getVendorName (index), connection_string.substr (0,4).c_str ());
+    }
+  }
+  return device;
 }
 
-boost::shared_ptr<OpenNIDevice> OpenNIDriver::getDeviceByIndex (unsigned index) const throw (OpenNIException)
+shared_ptr<OpenNIDevice> OpenNIDriver::getDeviceBySerialNumber (const string& serial_number) const throw (OpenNIException)
 {
-  return createDevice (index);
-}
+  map<string, unsigned>::const_iterator it = serial_map_.find (serial_number);
 
-boost::shared_ptr<OpenNIDevice> OpenNIDriver::getDeviceBySerialNumber (const string& serial_number) const throw (OpenNIException)
-{
-  map<string, int>::const_iterator it = serial_map_.find (serial_number);
-
-  if (it != serial_map_.end () && it->second >= 0)
+  if (it != serial_map_.end ())
   {
-    return createDevice (it->second);
+    return getDeviceByIndex (it->second);
   }
+  
+  THROW_OPENNI_EXCEPTION ("No device with serial number \'%s\' found", serial_number.c_str ());
 
-  return boost::shared_ptr<OpenNIDevice > ((OpenNIDevice*)NULL);
+  // because of warnings!!!
+  return shared_ptr<OpenNIDevice>( (OpenNIDevice*) NULL);
 }
 
-boost::shared_ptr<OpenNIDevice> OpenNIDriver::getDeviceByAddress (unsigned char bus, unsigned char address) const throw (OpenNIException)
+shared_ptr<OpenNIDevice> OpenNIDriver::getDeviceByAddress (unsigned char bus, unsigned char address) const throw (OpenNIException)
 {
-  map<unsigned char, map<unsigned char, int> >::const_iterator busIt = bus_map_.find (bus);
+  map<unsigned char, map<unsigned char, unsigned> >::const_iterator busIt = bus_map_.find (bus);
   if (busIt != bus_map_.end ())
   {
-    map<unsigned char, int>::const_iterator devIt = busIt->second.find (address);
-    if (devIt != busIt->second.end () && devIt->second >= 0)
+    map<unsigned char, unsigned>::const_iterator devIt = busIt->second.find (address);
+    if (devIt != busIt->second.end ())
     {
-      return createDevice (devIt->second);
+      return getDeviceByIndex (devIt->second);
     }
   }
 
-  return boost::shared_ptr<OpenNIDevice > ((OpenNIDevice*)NULL);
+  THROW_OPENNI_EXCEPTION ("No device on bus: %d @ %d found", (int)bus, (int)address );
+
+  // because of warnings!!!
+  return shared_ptr<OpenNIDevice>( (OpenNIDevice*) NULL);
 }
 
-void OpenNIDriver::getDeviceInfo ()
+void OpenNIDriver::getDeviceInfos () throw ()
 {
-  // extract bus and path for each of our devices -> unique
-  //map< unsigned char, map< unsigned char, unsigned > > device_map;
-  for (unsigned deviceIdx = 0; deviceIdx < device_info_.size (); ++deviceIdx)
-  {
-    XnUInt16 nVendorID = 0;
-    XnUInt16 nProductID = 0;
-    XnUInt8 nBus = 0;
-    XnUInt8 nAddress = 0;
-    sscanf (device_info_[deviceIdx].GetCreationInfo (), "%hx/%hx@%hhu/%hhu", &nVendorID, &nProductID, &nBus, &nAddress);
-
-    bus_map_[ nBus ][ nAddress ] = deviceIdx;
-  }
-
   struct usb_bus *bus;
   struct usb_device *dev;
 
@@ -209,18 +236,20 @@ void OpenNIDriver::getDeviceInfo ()
   for (bus = usb_busses; bus; bus = bus->next)
   {
     unsigned char busId = atoi (bus->dirname);
-    if (bus_map_.find (busId) == bus_map_.end ())
+    map<unsigned char, map<unsigned char, unsigned> >::const_iterator busIt = bus_map_.find (busId);
+    if (busIt == bus_map_.end ())
       continue;
 
     for (dev = bus->devices; dev; dev = dev->next)
     {
       unsigned char devId = atoi (dev->filename);
-      if (bus_map_[busId].find (devId) == bus_map_[busId].end ())
+      map<unsigned char, unsigned>::const_iterator addressIt = busIt->second.find (devId);
+      if (addressIt == busIt->second.end ())
         continue;
 
-      unsigned nodeIdx = bus_map_[busId][devId];
-      xn::NodeInfo& current_node = device_info_[nodeIdx];
-      XnProductionNodeDescription& description = const_cast<XnProductionNodeDescription&> ( current_node.GetDescription() );
+      unsigned nodeIdx = addressIt->second;
+      xn::NodeInfo& current_node = device_context_[nodeIdx].device_node;
+      XnProductionNodeDescription& description = const_cast<XnProductionNodeDescription&> (current_node.GetDescription());
 
       int ret;
       char buffer[256];
@@ -237,7 +266,7 @@ void OpenNIDriver::getDeviceInfo ()
           if (ret > 0)
             strcpy( description.strVendor, buffer );
           else
-            strcpy( description.strVendor, "unknwon" );
+            strcpy( description.strVendor, "unknown" );
         }
 
         if (dev->descriptor.iProduct)
@@ -246,25 +275,15 @@ void OpenNIDriver::getDeviceInfo ()
           if (ret > 0)
             strcpy( description.strName, buffer );
           else
-            strcpy( description.strName, "unknwon" );
+            strcpy( description.strName, "unknown" );
         }
-         
+
         if (dev->descriptor.iSerialNumber)
         {
           ret = usb_get_string_simple (udev, dev->descriptor.iSerialNumber, buffer, sizeof (buffer));
           if (ret > 0)
           {
             current_node.SetInstanceName (buffer);
-            string serial = buffer;
-
-            if (serial_map_.find (serial) == serial_map_.end ())
-            {
-              serial_map_[serial] = nodeIdx;
-            }
-            else // collision -> set to -1 since non-unique
-            {
-              serial_map_[serial] = -1;
-            }
           }
           else
             current_node.SetInstanceName ("");
@@ -278,4 +297,84 @@ void OpenNIDriver::getDeviceInfo ()
     }
   }
 }
+
+const char* OpenNIDriver::getSerialNumber (unsigned index) const throw ()
+{
+  return device_context_[index].device_node.GetInstanceName ();
+}
+
+const char* OpenNIDriver::getConnectionString (unsigned index) const throw ()
+{
+  return device_context_[index].device_node.GetCreationInfo ();
+}
+
+const char* OpenNIDriver::getVendorName (unsigned index) const throw ()
+{
+  return device_context_[index].device_node.GetDescription ().strVendor;
+}
+
+const char* OpenNIDriver::getProductName (unsigned index) const throw ()
+{
+  return device_context_[index].device_node.GetDescription ().strName;
+}
+
+unsigned short OpenNIDriver::getVendorID (unsigned index) const throw ()
+{
+  unsigned short vendor_id;
+  unsigned short product_id;
+  unsigned char bus;
+  unsigned char address;
+  sscanf (device_context_[index].device_node.GetCreationInfo (), "%hx/%hx@%hhu/%hhu", &vendor_id, &product_id, &bus, &address);
+
+  return vendor_id;
+}
+
+unsigned short OpenNIDriver::getProductID (unsigned index) const throw ()
+{
+  unsigned short vendor_id;
+  unsigned short product_id;
+  unsigned char bus;
+  unsigned char address;
+  sscanf (device_context_[index].device_node.GetCreationInfo (), "%hx/%hx@%hhu/%hhu", &vendor_id, &product_id, &bus, &address);
+
+  return product_id;
+}
+
+unsigned char  OpenNIDriver::getBus (unsigned index) const throw ()
+{
+  unsigned short vendor_id;
+  unsigned short product_id;
+  unsigned char bus;
+  unsigned char address;
+  sscanf (device_context_[index].device_node.GetCreationInfo (), "%hx/%hx@%hhu/%hhu", &vendor_id, &product_id, &bus, &address);
+
+  return bus;
+}
+
+unsigned char  OpenNIDriver::getAddress (unsigned index) const throw ()
+{
+  unsigned short vendor_id;
+  unsigned short product_id;
+  unsigned char bus;
+  unsigned char address;
+  sscanf (device_context_[index].device_node.GetCreationInfo (), "%hx/%hx@%hhu/%hhu", &vendor_id, &product_id, &bus, &address);
+
+  return address;
+}
+
+OpenNIDriver::DeviceContext::DeviceContext (const xn::NodeInfo& device, const xn::NodeInfo& image, const xn::NodeInfo& depth)
+: device_node (device)
+, image_node (image)
+, depth_node (depth)
+{
+}
+
+OpenNIDriver::DeviceContext::DeviceContext (const DeviceContext& other)
+: device_node (other.device_node)
+, image_node (other.image_node)
+, depth_node (other.depth_node)
+, device (other.device)
+{
+}
+
 } // namespace

@@ -43,6 +43,9 @@
 #include <dynamic_reconfigure/server.h>
 #include <openni_camera/OpenNIConfig.h>
 #include <image_transport/image_transport.h>
+#include <string>
+#include <message_filters/synchronizer.h>
+#include <message_filters/sync_policies/approximate_time.h>
 
 namespace openni_camera
 {
@@ -56,9 +59,14 @@ namespace openni_camera
     private:
       typedef OpenNIConfig Config;
       typedef dynamic_reconfigure::Server<Config> ReconfigureServer;
+      typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, sensor_msgs::Image> SyncPolicy;
+      typedef message_filters::Synchronizer<SyncPolicy> Synchronizer;
 
       /** \brief Nodelet initialization routine. */
       virtual void onInit ();
+      void setupDevice (ros::NodeHandle& comm_nh, ros::NodeHandle& param_nh);
+      void updateModeMaps ();
+      void updateSynchronization ();
 
       void configCallback (Config &config, uint32_t level);
       int mapXnMode2ConfigMode (const XnMapOutputMode& output_mode) const;
@@ -66,27 +74,84 @@ namespace openni_camera
 
       // callback methods
       void imageCallback (const openni_wrapper::Image& image, void* cookie);
+      void depthCallback (const openni_wrapper::DepthImage& depth_image, void* cookie);
+      void subscriberChangedEvent ();
+
+      // helper methods
+      inline bool isImageStreamRequired() const;
+      inline bool isDepthStreamRequired() const;
+      sensor_msgs::CameraInfoPtr fillCameraInfo (ros::Time time, bool is_rgb);
 
       // published topics
+      ros::Publisher pub_rgb_info_, pub_depth_info_;
       image_transport::Publisher pub_rgb_image_, pub_gray_image_, pub_depth_image_;
+      ros::Publisher pub_disparity_;
+      ros::Publisher pub_point_cloud_;
+      ros::Publisher pub_point_cloud_rgb_;
+
+      // Approximate synchronization for XYZRGB point clouds.
+      boost::shared_ptr<Synchronizer> depth_rgb_sync_;
 
       // publish methods
-      void publishRgbImageColor (const openni_wrapper::Image& image, ros::Time time) const;
-      void publishRgbImageMono (const openni_wrapper::Image& image, ros::Time time) const;
+      void publishRgbImage (const openni_wrapper::Image& image, ros::Time time) const;
+      void publishGrayImage (const openni_wrapper::Image& image, ros::Time time) const;
+      void publishDepthImage (const openni_wrapper::DepthImage& depth, ros::Time time) const;
+      void publishDisparity (const openni_wrapper::DepthImage& depth, ros::Time time) const;
+      void publishXYZPointCloud (const openni_wrapper::DepthImage& depth, ros::Time time) const;
+      void publishXYZRGBPointCloud (const sensor_msgs::ImageConstPtr& depth_msg, const sensor_msgs::ImageConstPtr& rgb_msg) const;
 
       /** \brief the actual openni device*/
       boost::shared_ptr<openni_wrapper::OpenNIDevice> device_;
 
-      ReconfigureServer reconfigure_server_;
+      /** \brief reconfigure server*/
+      boost::shared_ptr<ReconfigureServer> reconfigure_server_;
       Config config_;
+      boost::recursive_mutex reconfigure_mutex_;
 
-      string rgb_frame_id_;
-      string depth_frame_id_;
+      std::string rgb_frame_id_;
+      std::string depth_frame_id_;
       unsigned image_width_;
       unsigned image_height_;
       unsigned depth_width_;
       unsigned depth_height_;
+
+      struct modeComp
+      {
+        bool operator () (const XnMapOutputMode& mode1, const XnMapOutputMode& mode2) const
+        {
+          if (mode1.nXRes < mode2.nXRes)
+            return true;
+          else if (mode1.nXRes > mode2.nXRes)
+            return false;
+          else if (mode1.nYRes < mode2.nYRes)
+            return true;
+          else if (mode1.nYRes > mode2.nYRes)
+            return false;
+          else if (mode1.nFPS < mode2.nFPS)
+            return true;
+          else
+            return false;
+        }
+      };
+      std::map<XnMapOutputMode, int, modeComp> xn2config_map_;
+      std::map<int, XnMapOutputMode> config2xn_map_;
   };
+
+  bool OpenNINodelet::isImageStreamRequired() const
+  {
+    return (pub_rgb_image_.getNumSubscribers()       > 0 ||
+            pub_gray_image_.getNumSubscribers()      > 0 ||
+            pub_point_cloud_rgb_.getNumSubscribers() > 0 );
+  }
+
+  bool OpenNINodelet::isDepthStreamRequired() const
+  {
+    return (pub_depth_image_.getNumSubscribers()     > 0 ||
+            pub_disparity_.getNumSubscribers()       > 0 ||
+            pub_point_cloud_.getNumSubscribers()     > 0 ||
+            pub_point_cloud_rgb_.getNumSubscribers() > 0 );
+  }
+
 }
 
 #endif  //#ifndef OPENNI_NODELET_OPENNI_H_

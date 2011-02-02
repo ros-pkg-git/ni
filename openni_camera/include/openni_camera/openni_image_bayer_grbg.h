@@ -81,7 +81,7 @@ ImageBayerGRBG::DebayeringMethod ImageBayerGRBG::getDebayeringMethod () const th
 
 bool ImageBayerGRBG::resizingSupported (unsigned input_width, unsigned input_height, unsigned output_width, unsigned output_height)
 {
-  return (output_width <= input_width & output_height <= input_height && output_width % input_width == 0 && output_height % input_height == 0 );
+  return (output_width <= input_width && output_height <= input_height && input_width % output_width == 0 && input_height % output_height == 0 );
 }
 } // namespace
 

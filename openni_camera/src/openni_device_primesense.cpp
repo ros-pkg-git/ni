@@ -38,8 +38,10 @@
 #include <openni_camera/openni_image_yuv_422.h>
 #include <iostream>
 #include <sstream>
+#include <boost/thread/mutex.hpp>
 
 using namespace std;
+using namespace boost;
 
 namespace openni_wrapper
 {
@@ -48,7 +50,8 @@ DevicePrimesense::DevicePrimesense (xn::Context& context, const xn::NodeInfo& de
 : OpenNIDevice (context, device_node, image_node, depth_node)
 {
   Init ();
-  
+
+  unique_lock<mutex> image_lock(image_mutex_);
   XnStatus status = image_generator_.SetIntProperty ("InputFormat", 5);
   if (status != XN_STATUS_OK)
     THROW_OPENNI_EXCEPTION ("Error setting the image input format to Uncompressed 8-bit BAYER. Reason: %s", xnGetStatusString (status));
@@ -57,6 +60,9 @@ DevicePrimesense::DevicePrimesense (xn::Context& context, const xn::NodeInfo& de
   if (status != XN_STATUS_OK)
     THROW_OPENNI_EXCEPTION ("Failed to set image pixel format to YUV422. Reason: %s", xnGetStatusString (status));
 
+  image_lock.unlock ();
+
+  lock_guard<mutex> depth_lock(depth_mutex_);
   status = depth_generator_.SetIntProperty ("RegistrationType", 1);
   if (status != XN_STATUS_OK)
     THROW_OPENNI_EXCEPTION ("Error setting the registration type. Reason: %s", xnGetStatusString (status));
@@ -64,76 +70,13 @@ DevicePrimesense::DevicePrimesense (xn::Context& context, const xn::NodeInfo& de
 
 DevicePrimesense::~DevicePrimesense () throw ()
 {
+  depth_mutex_.lock ();
   depth_generator_.UnregisterFromNewDataAvailable (depth_callback_handle_);
+  depth_mutex_.unlock ();
+
+  image_mutex_.lock ();
   image_generator_.UnregisterFromNewDataAvailable (image_callback_handle_);
-}
-
-void DevicePrimesense::startImageStream () throw (OpenNIException)
-{
-  if (!image_generator_.IsGenerating ())
-  {
-    XnStatus status = image_generator_.StartGenerating ();
-    if (status != XN_STATUS_OK)
-      THROW_OPENNI_EXCEPTION ("starting image stream failed. Reason: %s", xnGetStatusString (status));
-
-//    if (depth_generator_.IsGenerating ())
-//    {
-//      XnStatus status = image_generator_.SetIntProperty ("FrameSync", 1);
-//      if (status != XN_STATUS_OK)
-//        THROW_OPENNI_EXCEPTION ("Error setting synchronization on. Reason: %s", xnGetStatusString (status));
-//    }
-  }
-}
-
-void DevicePrimesense::stopImageStream () throw (OpenNIException)
-{
-  if (image_generator_.IsGenerating ())
-  {
-    XnStatus status = image_generator_.StopGenerating ();
-    if (status != XN_STATUS_OK)
-      THROW_OPENNI_EXCEPTION ("stopping image stream failed. Reason: %s", xnGetStatusString (status));
-
-//    if (depth_generator_.IsGenerating ())
-//    {
-//      XnStatus status = image_generator_.SetIntProperty ("FrameSync", 0);
-//      if (status != XN_STATUS_OK)
-//        THROW_OPENNI_EXCEPTION ("Error setting synchronization off. Reason: %s", xnGetStatusString (status));
-//    }
-  }
-}
-
-void DevicePrimesense::startDepthStream () throw (OpenNIException)
-{
-  if (!depth_generator_.IsGenerating ())
-  {
-    XnStatus status = depth_generator_.StartGenerating ();
-    if (status != XN_STATUS_OK)
-      THROW_OPENNI_EXCEPTION ("starting depth stream failed. Reason: %s", xnGetStatusString (status));
-
-//    if (image_generator_.IsGenerating ())
-//    {
-//      XnStatus status = image_generator_.SetIntProperty ("FrameSync", 1);
-//      if (status != XN_STATUS_OK)
-//        THROW_OPENNI_EXCEPTION ("Error setting synchronization on. Reason: %s", xnGetStatusString (status));
-//    }
-  }
-}
-
-void DevicePrimesense::stopDepthStream () throw (OpenNIException)
-{
-  if (depth_generator_.IsGenerating ())
-  {
-    XnStatus status = depth_generator_.StopGenerating ();
-    if (status != XN_STATUS_OK)
-      THROW_OPENNI_EXCEPTION ("stopping depth stream failed. Reason: %s", xnGetStatusString (status));
-
-//    if (image_generator_.IsGenerating ())
-//    {
-//      XnStatus status = image_generator_.SetIntProperty ("FrameSync", 0);
-//      if (status != XN_STATUS_OK)
-//        THROW_OPENNI_EXCEPTION ("Error setting synchronization off. Reason: %s", xnGetStatusString (status));
-//    }
-  }
+  image_mutex_.unlock ();
 }
 
 bool DevicePrimesense::isImageResizeSupported (unsigned input_width, unsigned input_height, unsigned output_width, unsigned output_height) const throw ()
@@ -141,17 +84,109 @@ bool DevicePrimesense::isImageResizeSupported (unsigned input_width, unsigned in
   return ImageYUV422::resizingSupported (input_width, input_height, output_width, output_height);
 }
 
+//void DevicePrimesense::setImageOutputMode (const XnMapOutputMode& output_mode) throw (OpenNIException)
+//{
+//  if (output_mode.nFPS == 30 && output_mode.nXRes == XN_UXGA_X_RES && output_mode.nYRes == XN_UXGA_Y_RES )
+//  {
+//    cout << "setting image mode to UXGA" << endl;
+//    if (isImageStreamRunning ())
+//    {
+//      stopImageStream ();
+//      XnStatus status = image_generator_.SetIntProperty ("InputFormat", 0);
+//      if (status != XN_STATUS_OK)
+//        THROW_OPENNI_EXCEPTION ("Error setting the image input format to compressed BAYER. Reason: %s", xnGetStatusString (status));
+//      status = image_generator_.SetPixelFormat (XN_PIXEL_FORMAT_RGB24);
+//      if (status != XN_STATUS_OK)
+//        THROW_OPENNI_EXCEPTION ("Failed to set image pixel format to YUV422. Reason: %s", xnGetStatusString (status));
+//      sleep (1);
+//      startImageStream ();
+//    }
+//    else
+//    {
+//      XnStatus status = image_generator_.SetIntProperty ("InputFormat", 0);
+//      if (status != XN_STATUS_OK)
+//        THROW_OPENNI_EXCEPTION ("Error setting the image input format to compressed BAYER. Reason: %s", xnGetStatusString (status));
+//
+//      status = image_generator_.SetPixelFormat (XN_PIXEL_FORMAT_GRAYSCALE_8_BIT);
+//      if (status != XN_STATUS_OK)
+//        THROW_OPENNI_EXCEPTION ("Failed to set image pixel format to YUV422. Reason: %s", xnGetStatusString (status));
+//    }
+//  }
+//  else
+//  {
+//    XnStatus status = image_generator_.SetIntProperty ("InputFormat", 5);
+//    if (status != XN_STATUS_OK)
+//        THROW_OPENNI_EXCEPTION ("Error setting the image input format to uncompressed BAYER. Reason: %s", xnGetStatusString (status));
+//
+//    status = image_generator_.SetPixelFormat (XN_PIXEL_FORMAT_YUV422);
+//    if (status != XN_STATUS_OK)
+//      THROW_OPENNI_EXCEPTION ("Failed to set image pixel format to YUV422. Reason: %s", xnGetStatusString (status));
+//  }
+//  OpenNIDevice::setImageOutputMode (output_mode);
+//}
+
 void DevicePrimesense::getAvailableModes () throw (OpenNIException)
 {
   XnMapOutputMode output_mode;
   available_image_modes_.clear();
   available_depth_modes_.clear();
 
+  // Depth Modes
+  output_mode.nFPS = 30;
+  output_mode.nXRes = XN_VGA_X_RES;
+  output_mode.nYRes = XN_VGA_Y_RES;
+  available_depth_modes_.push_back (output_mode);
+
+  output_mode.nFPS = 25;
+  output_mode.nXRes = XN_VGA_X_RES;
+  output_mode.nYRes = XN_VGA_Y_RES;
+  available_depth_modes_.push_back (output_mode);
+
+  output_mode.nFPS = 25;
+  output_mode.nXRes = XN_QVGA_X_RES;
+  output_mode.nYRes = XN_QVGA_Y_RES;
+  available_depth_modes_.push_back (output_mode);
+
+  output_mode.nFPS = 30;
+  output_mode.nXRes = XN_QVGA_X_RES;
+  output_mode.nYRes = XN_QVGA_Y_RES;
+  available_depth_modes_.push_back (output_mode);
+
+  output_mode.nFPS = 60;
+  output_mode.nXRes = XN_QVGA_X_RES;
+  output_mode.nYRes = XN_QVGA_Y_RES;
+  available_depth_modes_.push_back (output_mode);
+
+  // RGB Modes
   output_mode.nFPS = 30;
   output_mode.nXRes = XN_VGA_X_RES;
   output_mode.nYRes = XN_VGA_Y_RES;
   available_image_modes_.push_back (output_mode);
-  available_depth_modes_.push_back (output_mode);
+
+  output_mode.nFPS = 25;
+  output_mode.nXRes = XN_VGA_X_RES;
+  output_mode.nYRes = XN_VGA_Y_RES;
+  available_image_modes_.push_back (output_mode);
+
+//  output_mode.nFPS = 30;
+//  output_mode.nXRes = XN_UXGA_X_RES;
+//  output_mode.nYRes = XN_UXGA_Y_RES;
+//  available_image_modes_.push_back (output_mode);
+
+  output_mode.nFPS = 25;
+  output_mode.nXRes = XN_QVGA_X_RES;
+  output_mode.nYRes = XN_QVGA_Y_RES;
+  available_image_modes_.push_back (output_mode);
+
+  output_mode.nFPS = 30;
+  output_mode.nXRes = XN_QVGA_X_RES;
+  output_mode.nYRes = XN_QVGA_Y_RES;
+  available_image_modes_.push_back (output_mode);
+
+  output_mode.nFPS = 60;
+  output_mode.nXRes = XN_QVGA_X_RES;
+  output_mode.nYRes = XN_QVGA_Y_RES;
+  available_image_modes_.push_back (output_mode);
 }
 
 Image* DevicePrimesense::getCurrentImage (const xn::ImageMetaData& image_data) const throw ()

@@ -19,9 +19,10 @@ OpenNIException::~OpenNIException () throw ()
 {
 }
 
-OpenNIException& OpenNIException::operator= (const OpenNIException& exception) throw ()
+OpenNIException& OpenNIException::operator = (const OpenNIException& exception) throw ()
 {
   message_ = exception.message_;
+  return *this;
 }
 
 const char* OpenNIException::what () const throw ()

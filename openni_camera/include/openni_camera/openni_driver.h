@@ -41,12 +41,13 @@
 #include <vector>
 #include <map>
 #include <openni_camera/openni_exception.h>
+#include <openni_camera/openni_device.h>
 #include <boost/shared_ptr.hpp>
 #include <XnCppWrapper.h>
 
 namespace openni_wrapper
 {
-class OpenNIDevice;
+//class OpenNIDevice;
 /**
  * @brief Driver class implemented as Singleton. This class contains the xn::Context object used by all devices. It \
  * provides methods for enumerating and accessing devices.
@@ -56,29 +57,49 @@ class OpenNIDevice;
 class OpenNIDriver
 {
 public:
+  ~OpenNIDriver () throw ();
+
   inline static OpenNIDriver& getInstance () throw (OpenNIException);
   inline unsigned getNumberDevices () const throw ();
-  inline const std::vector<xn::NodeInfo>& getDeviceInfoList () const throw ();
-  void updateDeviceList () throw (OpenNIException);
+  
   boost::shared_ptr<OpenNIDevice> getDeviceByIndex (unsigned index) const throw (OpenNIException);
   boost::shared_ptr<OpenNIDevice> getDeviceBySerialNumber (const std::string& serial_number) const throw (OpenNIException);
   boost::shared_ptr<OpenNIDevice> getDeviceByAddress (unsigned char bus, unsigned char address) const throw (OpenNIException);
 
-  void stopAll () throw (OpenNIException);
-  ~OpenNIDriver () throw ();
-protected:
-  OpenNIDriver () throw (OpenNIException);
-  boost::shared_ptr<OpenNIDevice> createDevice (unsigned index) const throw (OpenNIException);
+  const char* getSerialNumber (unsigned index) const throw ();
+  /** \brief returns the connectionstring for current device, which has following format vendorID/productID@BusID/DeviceID */
+  const char* getConnectionString (unsigned index) const throw ();
 
-  // workaround until Primesense Sensor fix this
-  void getDeviceInfo ();
-  std::vector<xn::NodeInfo> device_info_;
-  std::vector<xn::NodeInfo> depth_info_;
-  std::vector<xn::NodeInfo> image_info_;
+  const char* getVendorName (unsigned index) const throw ();
+  const char* getProductName (unsigned index) const throw ();
+  unsigned short getVendorID (unsigned index) const throw ();
+  unsigned short getProductID (unsigned index) const throw ();
+  unsigned char  getBus (unsigned index) const throw ();
+  unsigned char  getAddress (unsigned index) const throw ();
+
+  void stopAll () throw (OpenNIException);
+
+protected:
+  struct DeviceContext
+  {
+    DeviceContext (const xn::NodeInfo& device_node, const xn::NodeInfo& image_node, const xn::NodeInfo& depth_node);
+    DeviceContext (const DeviceContext&);
+    xn::NodeInfo device_node;
+    xn::NodeInfo image_node;
+    xn::NodeInfo depth_node;
+    boost::weak_ptr<OpenNIDevice> device;
+  };
+
+  OpenNIDriver () throw (OpenNIException);
+  boost::shared_ptr<OpenNIDevice> getDevice (unsigned index) const throw (OpenNIException);
+
+  // workaround to get additional device nformation like serial number, vendor and product name, until Primesense fix this
+  void getDeviceInfos () throw ();
+  mutable std::vector<DeviceContext> device_context_;
   mutable xn::Context context_;
 
-  std::map< unsigned char, std::map<unsigned char, int > > bus_map_;
-  std::map< std::string, int > serial_map_;
+  std::map< unsigned char, std::map<unsigned char, unsigned > > bus_map_;
+  std::map< std::string, unsigned > serial_map_;
 };
 
 OpenNIDriver& OpenNIDriver::getInstance () throw (OpenNIException)
@@ -89,12 +110,7 @@ OpenNIDriver& OpenNIDriver::getInstance () throw (OpenNIException)
 
 unsigned OpenNIDriver::getNumberDevices () const throw ()
 {
-  return (unsigned)device_info_.size ();
-}
-
-const std::vector<xn::NodeInfo>& OpenNIDriver::getDeviceInfoList () const throw ()
-{
-  return device_info_;
+  return (unsigned)device_context_.size ();
 }
 } // namespace
 #endif

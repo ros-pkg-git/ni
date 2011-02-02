@@ -26,14 +26,10 @@ rosbuild_add_library (openni_driver src/openni_driver.cpp
                                     src/openni_image_bayer_grbg.cpp
                                     src/openni_depth_image.cpp
                      )
-#rosbuild_add_compile_flags (openni_driver ${SSE_FLAGS})
+rosbuild_add_compile_flags (openni_driver ${SSE_FLAGS})
 
-#rosbuild_add_library (openni_nodelets src/openni_nodelet.cpp)
-#rosbuild_add_compile_flags (openni_nodelets ${SSE_FLAGS})
-#target_link_libraries (openni_nodelets openni_driver)
-
-#rosbuild_add_executable (openni_node src/openni_node.cpp)
-#target_link_libraries (openni_node openni_driver)
+rosbuild_add_library (openni_nodelet src/openni_nodelet.cpp)
+rosbuild_add_compile_flags (openni_nodelet ${SSE_FLAGS})
 
 rosbuild_add_executable (openni_example src/openni_example.cpp)
 target_link_libraries (openni_example openni_driver usb)

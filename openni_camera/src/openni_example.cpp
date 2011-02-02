@@ -44,6 +44,7 @@
 #include <XnCppWrapper.h>
 #include <opencv2/opencv.hpp>
 #include <boost/thread.hpp>
+#include <sys/times.h>
 
 using namespace std;
 using namespace openni_wrapper;
@@ -65,7 +66,7 @@ public:
     {
     }
     Mat image;
-    boost::mutex lock;
+    mutable boost::mutex lock;
     bool is_new;
   } ImageContext;
 public:
@@ -75,12 +76,16 @@ public:
 private:
   void imageCallback (const Image& image, void* cookie);
   void depthCallback (const DepthImage& depth, void* cookie);
+  void writeImages () const;
   map<string, ImageContext*> rgb_images_;
   map<string, ImageContext*> gray_images_;
   map<string, ImageContext*> depth_images_;
   vector< boost::shared_ptr<OpenNIDevice> > devices_;
   bool running_;
   unsigned selected_device_;
+
+  double image_timestamp;
+  double depth_timestamp;
 };
 
 MyOpenNIExample::MyOpenNIExample (const vector<unsigned>& device_indices)
@@ -98,21 +103,26 @@ MyOpenNIExample::MyOpenNIExample (const vector<unsigned>& device_indices)
     }
 
     boost::shared_ptr<OpenNIDevice> device = driver.getDeviceByIndex (*indexIt);
-    unsigned short vendor, product;
-    unsigned char bus, address;
-    device->getDeviceInfo (vendor, product, bus, address);
-    cout << devices_.size () << ". device on bus: " << device->getConnectionString () << ", serial number: " << device->getSerialNumber () << "  " << flush;
-    cout << vendor << " : " << product << " : " << (unsigned)bus << " : " << (unsigned)address << endl;
+    cout << devices_.size () + 1 << ". device on bus: " << (int)device->getBus () << " @ " << (int)device->getAddress ()
+            << " with serial number: " << device->getSerialNumber () << "  "
+            << device->getVendorName () << " : " << device->getProductName () << endl;
     devices_.push_back (device);
 
     XnMapOutputMode mode;
     mode.nXRes = 640;
     mode.nYRes = 480;
     mode.nFPS = 30;
-    if (device->isImageModeSupported (mode))
-      cout << "supported" << endl;
-    if (device->isDepthModeSupported (mode))
-      cout << "supported" << endl;
+    if (!device->isImageModeSupported (mode))
+    {
+      cout << "image stream mode " << mode.nXRes << " x " << mode.nYRes << " @ " << mode.nFPS << " not supported" << endl;
+      exit (-1);
+    }
+
+    if (!device->isDepthModeSupported (mode))
+    {
+      cout << "depth stream mode " << mode.nXRes << " x " << mode.nYRes << " @ " << mode.nFPS << " not supported" << endl;
+      exit (-1);
+    }
     // create Windows for this device.
     // We use connection string - which is a combination of vendorID,productID,busID,deviceID -instead of serial number,
     // since primesense devices dont support a serial number.
@@ -131,24 +141,19 @@ MyOpenNIExample::MyOpenNIExample (const vector<unsigned>& device_indices)
     // registering callback functions
     device->registerImageCallback (&MyOpenNIExample::imageCallback, *this, &(*device));
     device->registerDepthCallback (&MyOpenNIExample::depthCallback, *this, &(*device));
-
-    // we want registered depth images
-    device->setDepthRegistration (true);
-    // start devices
-    //device->startImageStream ();
-    //device->startDepthStream ();
-    //device->startImageStream ();
   }
+
+  timeval timestamp;
+  gettimeofday (&timestamp, NULL);
+  image_timestamp = depth_timestamp = timestamp.tv_sec + timestamp.tv_usec * 0.000001;
 }
 
 MyOpenNIExample::~MyOpenNIExample ()
 {
-  for (vector< boost::shared_ptr<OpenNIDevice> >::iterator deviceIt = devices_.begin (); deviceIt != devices_.end(); ++deviceIt)
-  {
-    (*deviceIt)->stopDepthStream ();
-    (*deviceIt)->stopImageStream ();
-  }
-  sleep (1);
+  // this should call the device destructors, which are blocking until workerthreads return.
+  devices_.clear ();
+
+  //now its save to free images
   for (map<string, ImageContext*>::iterator imageIt = rgb_images_.begin (); imageIt != rgb_images_.end (); ++imageIt)
   {
     delete imageIt->second;
@@ -165,33 +170,103 @@ MyOpenNIExample::~MyOpenNIExample ()
   }
 }
 
+void MyOpenNIExample::writeImages () const
+{
+  cout << "write images" << endl;
+  static unsigned index = 0;
+  ++index;
+
+  cout << "locking rgb images..." << flush;
+  map<string, ImageContext*>::const_iterator imageIt;
+  for (imageIt = rgb_images_.begin (); imageIt != rgb_images_.end (); ++imageIt)
+    imageIt->second->lock.lock ();
+
+  cout << "done\nlocking gray images..." << flush;
+  for (imageIt = gray_images_.begin (); imageIt != gray_images_.end (); ++imageIt)
+    imageIt->second->lock.lock ();
+  //  for (imageIt = depth_images_.begin (); imageIt != depth_images_.end (); ++imageIt)
+  //    imageIt->second->lock.lock ();
+  
+  cout << "locking rgb images..." << flush;
+  char file_name[255];
+  for (imageIt = rgb_images_.begin (); imageIt != rgb_images_.end (); ++imageIt)
+  {
+    sprintf (file_name, "rgb_%03u.png", index);
+    imwrite (file_name, imageIt->second->image);
+  }
+
+  for (imageIt = gray_images_.begin (); imageIt != gray_images_.end (); ++imageIt)
+  {
+    sprintf (file_name, "gray_%03u.png", index);
+    imwrite (file_name, imageIt->second->image);
+  }
+  //  cout << "write depth images" << endl;
+  //  for (imageIt = depth_images_.begin (); imageIt != depth_images_.end (); ++imageIt)
+  //  {
+  //    sprintf (file_name, "%s_depth_%03d.png", imageIt->first, index);
+  //    cout << "saving depth image: " << file_name << endl;
+  //    imwrite (file_name, imageIt->second->image);
+  //  }
+
+  for (imageIt = rgb_images_.begin (); imageIt != rgb_images_.end (); ++imageIt)
+    imageIt->second->lock.unlock ();
+
+  for (imageIt = gray_images_.begin (); imageIt != gray_images_.end (); ++imageIt)
+    imageIt->second->lock.unlock ();
+  //  for (imageIt = depth_images_.begin (); imageIt != depth_images_.end (); ++imageIt)
+  //    imageIt->second->lock.unlock ();
+}
+
 void MyOpenNIExample::imageCallback (const Image& image, void* cookie)
 {
+  timeval timestamp;
+  gettimeofday (&timestamp, NULL);
+
+  double now = timestamp.tv_sec + timestamp.tv_usec * 0.000001;
+  double diff1 = min (fabs (now - depth_timestamp), fabs (depth_timestamp - image_timestamp));
+  double diff2 = max (fabs (now - depth_timestamp), fabs (depth_timestamp - image_timestamp));
+  cout << diff1 * 1000.0 << "\tms vs. " << diff2 * 1000.0 << endl;
+
+  image_timestamp = now;
   OpenNIDevice* device = reinterpret_cast<OpenNIDevice*>(cookie);
   ImageContext* rgb_image_context = rgb_images_[device->getConnectionString ()];
   ImageContext* gray_image_context = gray_images_[device->getConnectionString ()];
 
-  // lock image so it does not get draw
+  // lock image so it does not get drawn
   unique_lock<mutex> rgb_lock (rgb_image_context->lock);
-  image.fillRGB (rgb_image_context->image.cols, rgb_image_context->image.rows, rgb_image_context->image.data, rgb_image_context->image.step);
+  unsigned char* rgb_buffer = (unsigned char*)(rgb_image_context->image.data + (rgb_image_context->image.cols >> 2) * rgb_image_context->image.elemSize () +
+                                              (rgb_image_context->image.rows >> 2) * rgb_image_context->image.step);
+  image.fillRGB (rgb_image_context->image.cols >> 1, rgb_image_context->image.rows >> 1, rgb_buffer, rgb_image_context->image.step);
+  //image.fillRGB (rgb_image_context->image.cols, rgb_image_context->image.rows, rgb_image_context->image.data, rgb_image_context->image.step);
   rgb_image_context->is_new = true;
   rgb_lock.unlock ();
 
   unique_lock<mutex> gray_lock (gray_image_context->lock);
-  image.fillGrayscale (gray_image_context->image.cols, gray_image_context->image.rows, gray_image_context->image.data, gray_image_context->image.step);
+
+  unsigned char* gray_buffer = (unsigned char*)(gray_image_context->image.data + (gray_image_context->image.cols >> 2) +
+                                               (gray_image_context->image.rows >> 2) * gray_image_context->image.step);
+  image.fillGrayscale (gray_image_context->image.cols >> 1, gray_image_context->image.rows >> 1, gray_buffer, gray_image_context->image.step);
+  //image.fillGrayscale (gray_image_context->image.cols, gray_image_context->image.rows, gray_image_context->image.data, gray_image_context->image.step);
   gray_image_context->is_new = true;
 }
 
 void MyOpenNIExample::depthCallback (const DepthImage& depth, void* cookie)
 {
+
+  timeval timestamp;
+  gettimeofday (&timestamp, NULL);
+  depth_timestamp = timestamp.tv_sec + timestamp.tv_usec * 0.000001;
+
   OpenNIDevice* device = reinterpret_cast<OpenNIDevice*>(cookie);
   ImageContext* depth_image_context = depth_images_[device->getConnectionString ()];
 
-  // lock depth image so it does not get draw
+  // lock depth image so it does not get drawn
   unique_lock<mutex> depth_lock (depth_image_context->lock);
-  depth.fillDepthImage (depth_image_context->image.cols, depth_image_context->image.rows, (float*)depth_image_context->image.data, depth_image_context->image.step);
+  float* buffer = (float*)(depth_image_context->image.data + (depth_image_context->image.cols >> 2) * sizeof(float) +
+                          (depth_image_context->image.rows >> 2) * depth_image_context->image.step );
+  depth.fillDepthImage (depth_image_context->image.cols >> 1, depth_image_context->image.rows >> 1, buffer, depth_image_context->image.step);
+  //depth.fillDepthImage (depth_image_context->image.cols, depth_image_context->image.rows, (float*)depth_image_context->image.data, depth_image_context->image.step);
   depth_image_context->is_new = true;
-
 }
 
 int MyOpenNIExample::run ()
@@ -248,24 +323,59 @@ int MyOpenNIExample::run ()
         case '2':
           selected_device_ = 1;
           break;
+        case '3':
+          selected_device_ = 2;
+          break;
 
         case 'r':
         case 'R':
           devices_[selected_device_]->setDepthRegistration (!devices_[selected_device_]->isDepthRegistered ());
           break;
+        case 's':
+        case 'S':
+          if (devices_[selected_device_]->isSynchronizationSupported ())
+            devices_[selected_device_]->setSynchronization (!devices_[selected_device_]->isSynchronized ());
+          break;
+        case 'c':
+        case 'C':
+          if (devices_[selected_device_]->isDepthCropped ())
+          {
+            depth_images_[devices_[selected_device_]->getConnectionString ()]->lock.lock ();
+            //depth_images_[devices_[selected_device_]->getConnectionString ()]->image.create (480, 640, CV_32FC1);
+            depth_images_[devices_[selected_device_]->getConnectionString ()]->image.rows = 480;
+            depth_images_[devices_[selected_device_]->getConnectionString ()]->image.cols = 640;
+            depth_images_[devices_[selected_device_]->getConnectionString ()]->lock.unlock ();
+            devices_[selected_device_]->setDepthCropping (0, 0, 0, 0);
+          }
+          else if (devices_[selected_device_]->isDepthCroppingSupported ())
+          {
+            depth_images_[devices_[selected_device_]->getConnectionString ()]->lock.lock ();
+            //depth_images_[devices_[selected_device_]->getConnectionString ()]->image.create (300, 400, CV_32FC1);
+            depth_images_[devices_[selected_device_]->getConnectionString ()]->image.rows = 240;
+            depth_images_[devices_[selected_device_]->getConnectionString ()]->image.cols = 320;
+            depth_images_[devices_[selected_device_]->getConnectionString ()]->lock.unlock ();
+            devices_[selected_device_]->setDepthCropping (100, 100, 320, 240);
+          }
+          break;
+
         case 'd':
         case 'D':
-          if (devices_[selected_device_]->isDepthRunning ())
+          if (devices_[selected_device_]->isDepthStreamRunning ())
             devices_[selected_device_]->stopDepthStream ();
           else
             devices_[selected_device_]->startDepthStream ();
           break;
         case 'i':
         case 'I':
-          if (devices_[selected_device_]->isImageRunning ())
+          if (devices_[selected_device_]->isImageStreamRunning ())
             devices_[selected_device_]->stopImageStream ();
           else
             devices_[selected_device_]->startImageStream ();
+          break;
+
+        case 'w':
+        case 'W':
+          writeImages ();
           break;
       }
     }
@@ -277,6 +387,7 @@ int MyOpenNIExample::run ()
   }
   catch (...)
   {
+
     cout << "unknown exception caught" << endl;
     return (-1);
   }
@@ -285,25 +396,54 @@ int MyOpenNIExample::run ()
 
 int main (int argc, char** argv)
 {
+  OpenNIDriver& driver = OpenNIDriver::getInstance ();
   if (argc == 1)
   {
     cout << "Usage: " << argv[0] << " (<device-index>)+" << endl;
+    if (driver.getNumberDevices () > 0)
+    {
+      for (unsigned deviceIdx = 0; deviceIdx < driver.getNumberDevices (); ++deviceIdx)
+      {
+        cout << "Device: " << deviceIdx << ", vendor: " << driver.getVendorName (deviceIdx) << ", product: " << driver.getProductName (deviceIdx)
+                << ", connected: " << (int)driver.getBus (deviceIdx) << " @ " << (int)driver.getAddress (deviceIdx) << ", serial number: \'" << driver.getSerialNumber (deviceIdx) << "\'" << endl;
+      }
+    }
+    else
+      cout << "No devices connected." << endl;
     exit (1);
   }
 
-  OpenNIDriver& driver = OpenNIDriver::getInstance ();
   vector <unsigned> device_indices;
   for (int argIdx = 1; argIdx < argc; ++argIdx)
   {
     unsigned deviceIdx = (unsigned)atoi (argv[argIdx]);
     if (deviceIdx >= driver.getNumberDevices ())
     {
-      cout << "Index out of range." << driver.getNumberDevices () << " devices found." << endl;
+      if (driver.getNumberDevices () > 0)
+      {
+        cout << "Device index out of range. " << driver.getNumberDevices () << " devices found." << endl;
+        for (unsigned deviceIdx = 0; deviceIdx < driver.getNumberDevices (); ++deviceIdx)
+        {
+          cout << "Device: " << deviceIdx << ", vendor: " << driver.getVendorName (deviceIdx) << ", product: "
+                  << driver.getProductName (deviceIdx) << ", connected: " << (int)driver.getBus (deviceIdx) << " @ "
+                  << (int)driver.getAddress (deviceIdx) << ", serial number: \'" << driver.getSerialNumber (deviceIdx) << "\'" << endl;
+        }
+      }
+      else
+        cout << "No devices connected." << endl;
       exit (-1);
     }
     device_indices.push_back ((unsigned)deviceIdx);
   }
 
+  cout << "<1,2,3...> to select device" << endl;
+  cout << "<I> to start or stop image stream of selected device" << endl;
+  cout << "<D> to start or stop depth stream of selected device" << endl;
+  cout << "<R> to turn on or off registration for selected device" << endl;
+  cout << "<S> to turn on or off synchronization for selected device" << endl;
+  cout << "<C> to turn on or off image cropping for selected device" << endl;
+  cout << "<W> write current images" << endl;
+  cout << "<Q> to quit application" << endl;
   MyOpenNIExample example (device_indices);
 
   return example.run ();

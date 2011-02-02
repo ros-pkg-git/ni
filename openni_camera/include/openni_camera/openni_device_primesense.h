@@ -55,13 +55,7 @@ class DevicePrimesense : public OpenNIDevice
 public:
   DevicePrimesense (xn::Context& context, const xn::NodeInfo& device_node, const xn::NodeInfo& image_node, const xn::NodeInfo& depth_node) throw (OpenNIException);
   virtual ~DevicePrimesense () throw ();
-
-  // override.. need workaround for registration!
-  virtual void startImageStream () throw (OpenNIException);
-  virtual void stopImageStream () throw (OpenNIException);
-
-  virtual void startDepthStream () throw (OpenNIException);
-  virtual void stopDepthStream () throw (OpenNIException);
+  //virtual void setImageOutputMode (const XnMapOutputMode& output_mode) throw (OpenNIException);
 
 protected:
   virtual Image* getCurrentImage (const xn::ImageMetaData& image_meta_data) const throw ();

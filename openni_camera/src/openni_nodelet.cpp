@@ -1,7 +1,11 @@
 /*
  * Software License Agreement (BSD License)
  *
- *  Copyright (c) 2010, Willow Garage, Inc.
+ *  Copyright (c) 2011 Willow Garage Inc.
+ *    Suat Gedikli <gedikli@willowgarage.com>
+ *    Patrick Michelich <michelich@willowgarage.com>
+ *    Radu Bogdan Rusu <rusu@willowgarage.com>
+ *
  *  All rights reserved.
  *
  *  Redistribution and use in source and binary forms, with or without
@@ -33,29 +37,676 @@
  *
  */
 #include <pluginlib/class_list_macros.h>
-#include "openni_camera/openni_nodelets.h"
+#include "openni_camera/openni_nodelet.h"
+#include "openni_camera/openni_device_kinect.h"
+#include <sensor_msgs/image_encodings.h>
+#include <pcl_ros/point_cloud.h>
+#include <pcl/point_types.h>
+#include <stereo_msgs/DisparityImage.h>
 
-typedef openni_wrapper::OpenNIDriverNodelet OpenNIDriver;
+#if ROS_VERSION_MINIMUM(1, 3, 0)
+#include <sensor_msgs/distortion_models.h>
+#endif
 
-PLUGINLIB_DECLARE_CLASS (openni_wrapper, OpenNIDriver, OpenNIDriver, nodelet::Nodelet);
-
-void
-openni_wrapper::OpenNIDriverNodelet::onInit ()
+using namespace std;
+using namespace openni_wrapper;
+namespace openni_camera
 {
-  /// @todo What exactly goes on with the threading here? -PM
-  ros::NodeHandle comm_nh( getMTNodeHandle().resolveName("camera") ); // for topics, services
-  ros::NodeHandle param_nh = getMTPrivateNodeHandle (); // for parameters
-  driver_ = new OpenNIDriver (comm_nh, param_nh);
+PLUGINLIB_DECLARE_CLASS (openni_camera, OpenNINodelet, openni_camera::OpenNINodelet, nodelet::Nodelet);
 
-  int device_id;
-  param_nh.param ("device_id", device_id, 0);
+typedef union
+{
+  struct /*anonymous*/
+  {
+    unsigned char Blue;
+    unsigned char Green;
+    unsigned char Red;
+    unsigned char Alpha;
+  };
+  float float_value;
+  long long_value;
+} RGBValue;
 
-  spinthread_ = new boost::thread (boost::bind (&OpenNIDriverNodelet::spin, this));
+void OpenNINodelet::onInit ()
+{
+  ros::NodeHandle comm_nh (getNodeHandle ().resolveName ("camera")); // for topics, services
+  ros::NodeHandle param_nh = getPrivateNodeHandle (); // for parameters
+
+  param_nh.param ("rgb_frame_id", rgb_frame_id_, string (""));
+  if (rgb_frame_id_.empty ())
+  {
+    rgb_frame_id_ = "/openni_rgb_optical_frame";
+    ROS_INFO ("\'rgb_frame_id_\' not set. using default: \'%s\'", rgb_frame_id_.c_str());
+  }
+
+  param_nh.param ("depth_frame_id", depth_frame_id_, string (""));
+  if (depth_frame_id_.empty ())
+  {
+    depth_frame_id_ = "/openni_depth_optical_frame";
+    ROS_INFO ("\'depth_frame_id_\' not set. using default: \'%s\'", depth_frame_id_.c_str());
+  }
+
+  image_transport::ImageTransport imageTransport (comm_nh);
+  image_transport::SubscriberStatusCallback subscriberChanged = boost::bind(&OpenNINodelet::subscriberChangedEvent, this);
+  pub_rgb_image_   = imageTransport.advertise ("rgb/image_color", 5, subscriberChanged, subscriberChanged );
+  pub_gray_image_  = imageTransport.advertise ("rgb/image_mono" , 5, subscriberChanged, subscriberChanged );
+  pub_depth_image_ = imageTransport.advertise ("depth/image"    , 5, subscriberChanged, subscriberChanged );
+
+  ros::SubscriberStatusCallback subscriberChanged2 = boost::bind(&OpenNINodelet::subscriberChangedEvent, this);
+  pub_disparity_ = comm_nh.advertise<stereo_msgs::DisparityImage > ("depth/disparity", 5, subscriberChanged2, subscriberChanged2);
+  pub_rgb_info_ = comm_nh.advertise<sensor_msgs::CameraInfo > ("rgb/camera_info", 5, subscriberChanged2, subscriberChanged2);
+  pub_depth_info_ = comm_nh.advertise<sensor_msgs::CameraInfo > ("depth/camera_info", 5, subscriberChanged2, subscriberChanged2);
+  pub_point_cloud_ = comm_nh.advertise<pcl::PointCloud<pcl::PointXYZ> > ("depth/points", 5, subscriberChanged2, subscriberChanged2);
+  pub_point_cloud_rgb_ = comm_nh.advertise<pcl::PointCloud<pcl::PointXYZRGB> > ("depth/points_rgb", 5, subscriberChanged2, subscriberChanged2);
+
+  SyncPolicy sync_policy (4); // queue size
+  depth_rgb_sync_.reset (new Synchronizer (sync_policy));
+  depth_rgb_sync_->registerCallback (boost::bind (&OpenNINodelet::publishXYZRGBPointCloud, this, _1, _2));
+
+  updateModeMaps ();
+  setupDevice (comm_nh, param_nh);
+
+  // initialize dynamic reconfigure
+  reconfigure_server_.reset (new ReconfigureServer (reconfigure_mutex_, param_nh));
+  reconfigure_mutex_.lock ();
+  reconfigure_server_->updateConfig (config_);
+  reconfigure_mutex_.unlock ();
+  reconfigure_server_->setCallback (boost::bind (&OpenNINodelet::configCallback, this, _1, _2));
 }
 
-void
-openni_wrapper::OpenNIDriverNodelet::spin ()
+void OpenNINodelet::setupDevice (ros::NodeHandle& comm_nh, ros::NodeHandle& param_nh)
 {
-  driver_->spin ();
+  // Initialize the openni device
+  OpenNIDriver& driver = OpenNIDriver::getInstance ();
+
+  if (driver.getNumberDevices () == 0)
+  {
+    ROS_ERROR ("[%s] No devices connected.", getName ().c_str ());
+    exit (-1);
+  }
+
+  ROS_INFO ("[%s] Number devices connected: %d", getName ().c_str (), driver.getNumberDevices ());
+  for (unsigned deviceIdx = 0; deviceIdx < driver.getNumberDevices (); ++deviceIdx)
+  {
+    ROS_INFO ("[%s] %u. device on bus %03u:%02u is a %s (%03x) from %s (%03x) with serial id \'%s\'"
+              , getName ().c_str (), deviceIdx + 1, driver.getBus (deviceIdx), driver.getAddress (deviceIdx)
+              , driver.getProductName (deviceIdx), driver.getProductID (deviceIdx), driver.getVendorName (deviceIdx)
+              , driver.getVendorID (deviceIdx), driver.getSerialNumber (deviceIdx));
+  }
+
+  string device_id;
+  param_nh.param ("device_id", device_id, std::string ());
+
+  if (device_id.empty ())
+  {
+    ROS_WARN ("[%s] device_id is not set! Using first device.", getName ().c_str ());
+    device_ = driver.getDeviceByIndex (0);
+  }
+  else
+  {
+    if (device_id.find ('@') != string::npos)
+    {
+      size_t pos = device_id.find ('@');
+      unsigned bus = atoi (device_id.substr (0, pos).c_str ());
+      unsigned address = atoi (device_id.substr (pos + 1, device_id.length () - pos - 1).c_str ());
+      ROS_INFO ("[%s] searching for device with bus@address = %d@%d", getName ().c_str (), bus, address);
+      device_ = driver.getDeviceByAddress (bus, address);
+    }
+    else if (device_id[0] == '#')
+    {
+      unsigned index = atoi (device_id.c_str () + 1);
+      ROS_INFO ("[%s] searching for device with index = %d", getName ().c_str (), index);
+      device_ = driver.getDeviceByIndex (index - 1);
+    }
+    else
+    {
+      ROS_INFO ("[%s] searching for device with serial number = %s", getName ().c_str (), device_id.c_str ());
+      device_ = driver.getDeviceBySerialNumber (device_id);
+    }
+  }
+  if (!device_)
+  {
+    ROS_ERROR ("[%s] No matching device found.", getName ().c_str ());
+    exit (-1);
+  }
+  else
+  {
+    ROS_INFO ("[%s] Opened '%s' on bus %d:%d with serial number '%s'", getName ().c_str (),
+              device_->getProductName (), device_->getBus (), device_->getAddress (), device_->getSerialNumber ());
+  }
+
+  device_->registerImageCallback (&OpenNINodelet::imageCallback, *this);
+  device_->registerDepthCallback (&OpenNINodelet::depthCallback, *this);
+
+  device_->setImageOutputMode ( device_->getDefaultImageMode () );
+  config_.image_mode = mapXnMode2ConfigMode (device_->getDefaultImageMode ());
+  device_->setDepthOutputMode ( device_->getDefaultDepthMode () );
+  config_.depth_mode = mapXnMode2ConfigMode (device_->getDefaultImageMode ());
+  device_->setDepthRegistration (false);
+  config_.depth_registration = false;
+  config_.debayering = OpenNI_Bilinear;
+
+  image_width_  = device_->getDefaultImageMode ().nXRes;
+  image_height_ = device_->getDefaultImageMode ().nYRes;
+  depth_width_  = device_->getDefaultDepthMode ().nXRes;
+  depth_height_ = device_->getDefaultDepthMode ().nYRes;
 }
 
+void OpenNINodelet::imageCallback (const openni_wrapper::Image& image, void* cookie)
+{
+  ros::Time time = ros::Time::now ();
+
+  if (pub_rgb_info_.getNumSubscribers () > 0)
+    pub_rgb_info_.publish (fillCameraInfo (time, true));
+
+  if (pub_rgb_image_.getNumSubscribers () > 0 || pub_point_cloud_rgb_.getNumSubscribers () > 0 )
+    publishRgbImage (image, time);
+
+  if (pub_gray_image_.getNumSubscribers () > 0)
+    publishGrayImage (image, time);
+}
+
+void OpenNINodelet::depthCallback (const openni_wrapper::DepthImage& depth_image, void* cookie)
+{
+  ros::Time time = ros::Time::now ();
+
+  // Camera info for depth image
+  if (pub_depth_info_.getNumSubscribers () > 0)
+    pub_depth_info_.publish (fillCameraInfo (time, false));
+
+  // Depth image
+  if (pub_depth_image_.getNumSubscribers () > 0 || (pub_point_cloud_rgb_.getNumSubscribers () > 0 ))
+    publishDepthImage (depth_image, time);
+
+  // Disparity image
+  if (pub_disparity_.getNumSubscribers () > 0)
+    publishDisparity (depth_image, time);
+
+  // Unregistered point cloud
+  if (pub_point_cloud_.getNumSubscribers () > 0 )
+    publishXYZPointCloud (depth_image, time);
+}
+
+void OpenNINodelet::subscriberChangedEvent ()
+{
+  // chek if we need to start/stop any stream
+  if (isImageStreamRequired () && !device_->isImageStreamRunning ())
+  {
+    device_->startImageStream ();
+    updateSynchronization ();
+  }
+  else if (!isImageStreamRequired () && device_->isImageStreamRunning ())
+  {
+    if (device_->isSynchronized ())
+      device_->setSynchronization (false);
+
+    device_->stopImageStream ();
+    if (pub_rgb_info_.getNumSubscribers() > 0)
+      ROS_WARN("Camera Info for rgb stream has subscribers, but stream has stopped.");
+  }
+
+  if (isDepthStreamRequired () && !device_->isDepthStreamRunning ())
+  {
+    device_->startDepthStream ();
+    updateSynchronization ();
+  }
+  else if ( !isDepthStreamRequired () && device_->isDepthStreamRunning ())
+  {
+    if (device_->isSynchronized ())
+      device_->setSynchronization (false);
+    
+    device_->stopDepthStream ();
+    if (pub_depth_info_.getNumSubscribers() > 0)
+      ROS_WARN("Camera Info for depth stream has subscribers, but stream has stopped.");
+  }
+
+  if (pub_point_cloud_rgb_.getNumSubscribers() > 0)
+  {
+    reconfigure_mutex_.lock ();
+    if (!device_->isDepthRegistered ())
+    {
+      ROS_WARN ("turning on depth registration, since PointCloudXYZRGB has subscribers.");
+      device_->setDepthRegistration (true);
+      config_.depth_registration = true;
+      reconfigure_server_->updateConfig (config_);
+    }
+
+    if (config_.depth_mode < config_.image_mode)
+    {
+      ROS_WARN ("PointCloudXYZRGB need at least the same image size for mapping rgb values to the points");
+
+      Config config = config_;
+      config.image_mode = config_.depth_mode;
+      reconfigure_server_->updateConfig (config);
+      configCallback (config, 0);
+    }
+
+    reconfigure_mutex_.unlock ();
+  }
+}
+
+void OpenNINodelet::publishRgbImage (const Image& image, ros::Time time) const
+{
+  sensor_msgs::ImagePtr rgb_msg = boost::make_shared<sensor_msgs::Image > ();
+  rgb_msg->header.stamp = time;
+  rgb_msg->header.frame_id = rgb_frame_id_;
+  rgb_msg->encoding = sensor_msgs::image_encodings::RGB8;
+  rgb_msg->height = image_height_;
+  rgb_msg->width = image_width_;
+  rgb_msg->step = image_width_ * 3;
+  rgb_msg->data.resize (rgb_msg->height * rgb_msg->step);
+  image.fillRGB (rgb_msg->width, rgb_msg->height, &rgb_msg->data[0], rgb_msg->step);
+
+  if (pub_rgb_image_.getNumSubscribers () > 0)
+    pub_rgb_image_.publish (rgb_msg);
+  
+  if (pub_point_cloud_rgb_.getNumSubscribers () > 0)
+    depth_rgb_sync_->add < 1 > (rgb_msg);
+}
+
+void OpenNINodelet::publishGrayImage (const Image& image, ros::Time time) const
+{
+  sensor_msgs::ImagePtr gray_msg = boost::make_shared<sensor_msgs::Image > ();
+  gray_msg->header.stamp = time;
+  gray_msg->header.frame_id = rgb_frame_id_;
+  gray_msg->encoding = sensor_msgs::image_encodings::MONO8;
+  gray_msg->height = image_height_;
+  gray_msg->width = image_width_;
+  gray_msg->step = image_width_;
+  gray_msg->data.resize (gray_msg->height * gray_msg->step);
+  image.fillGrayscale (gray_msg->width, gray_msg->height, &gray_msg->data[0], gray_msg->step);
+
+  pub_gray_image_.publish (gray_msg);
+}
+
+void OpenNINodelet::publishDepthImage (const DepthImage& depth, ros::Time time) const
+{
+  sensor_msgs::ImagePtr depth_msg = boost::make_shared<sensor_msgs::Image > ();
+  depth_msg->header.stamp         = time;
+  depth_msg->header.frame_id      = device_->isDepthRegistered () ? rgb_frame_id_ : depth_frame_id_;
+  depth_msg->encoding             = sensor_msgs::image_encodings::TYPE_32FC1;
+  depth_msg->height               = depth_height_;
+  depth_msg->width                = depth_width_;
+  depth_msg->step                 = depth_msg->width * sizeof (float);
+  depth_msg->data.resize (depth_msg->height * depth_msg->step);
+
+  depth.fillDepthImage (depth_width_, depth_height_, reinterpret_cast<float*>(&depth_msg->data[0]), depth_msg->step);
+
+  if (pub_depth_image_.getNumSubscribers () > 0)
+    pub_depth_image_.publish (depth_msg);
+
+  if (pub_point_cloud_rgb_.getNumSubscribers () > 0)
+    depth_rgb_sync_->add < 0 > (depth_msg);
+}
+
+void OpenNINodelet::publishDisparity (const DepthImage& depth, ros::Time time) const
+{
+  stereo_msgs::DisparityImagePtr disp_msg = boost::make_shared<stereo_msgs::DisparityImage > ();
+  disp_msg->header.stamp                  = time;
+  disp_msg->header.frame_id               = device_->isDepthRegistered () ? rgb_frame_id_ : depth_frame_id_;
+  disp_msg->image.header                  = disp_msg->header;
+  disp_msg->image.encoding                = sensor_msgs::image_encodings::TYPE_32FC1;
+  disp_msg->image.height                  = depth_height_;
+  disp_msg->image.width                   = depth_width_;
+  disp_msg->image.step                    = disp_msg->image.width * sizeof (float);
+  disp_msg->image.data.resize (disp_msg->image.height * disp_msg->image.step);
+  disp_msg->T = depth.getBaseline ();
+  disp_msg->f = depth.getFocalLength () * depth_width_ / depth.getWidth ();
+
+  /// @todo Compute these values from DepthGenerator::GetDeviceMaxDepth() and the like
+  disp_msg->min_disparity = 0.0;
+  disp_msg->max_disparity = disp_msg->T * disp_msg->f / 0.3;
+  disp_msg->delta_d = 0.125;
+
+  depth.fillDisparityImage (depth_width_, depth_height_, reinterpret_cast<float*>(&disp_msg->image.data[0]), disp_msg->image.step);
+
+  pub_disparity_.publish (disp_msg);
+}
+
+void OpenNINodelet::publishXYZPointCloud (const DepthImage& depth, ros::Time time) const
+{
+  const xn::DepthMetaData& depth_md = depth.getDepthMetaData ();
+
+  boost::shared_ptr<pcl::PointCloud<pcl::PointXYZ> > cloud_msg = boost::make_shared<pcl::PointCloud<pcl::PointXYZ> > ();
+  cloud_msg->header.stamp = time;
+  cloud_msg->height       = depth_height_;
+  cloud_msg->width        = depth_width_;
+  cloud_msg->is_dense     = false;
+
+  cloud_msg->points.resize (cloud_msg->height * cloud_msg->width);
+
+  float constant = 0.001 / device_->getDepthFocalLength (depth_width_);
+
+  if (device_->isDepthRegistered ())
+    cloud_msg->header.frame_id = rgb_frame_id_;
+  else
+    cloud_msg->header.frame_id = depth_frame_id_;
+
+  float centerX = (cloud_msg->width >> 1 ) - 0.5f;
+  float centerY = (cloud_msg->height >> 1) - 0.5f;
+
+  float bad_point = std::numeric_limits<float>::quiet_NaN ();
+
+  unsigned depthStep = depth_md.XRes () / cloud_msg->width;
+  unsigned depthSkip = (depth_md.YRes () / cloud_msg->height - 1) * depth_md.XRes ();
+  int depth_idx = 0;
+  pcl::PointCloud<pcl::PointXYZ>::iterator pt_iter = cloud_msg->begin ();
+  for (int v = 0; v < (int)cloud_msg->height; ++v, depth_idx += depthSkip)
+  {
+    for (int u = 0; u < (int)cloud_msg->width; ++u, depth_idx += depthStep, ++pt_iter)
+    {
+      pcl::PointXYZ& pt = *pt_iter;
+
+      // Check for invalid measurements
+      if (depth_md[depth_idx] == 0 ||
+          depth_md[depth_idx] == depth.getNoSampleValue () ||
+          depth_md[depth_idx] == depth.getShadowValue ())
+      {
+        // not valid
+        pt.x = pt.y = pt.z = bad_point;
+        continue;
+      }
+
+      // Fill in XYZ
+      pt.x = (u - centerX) * depth_md[depth_idx] * constant;
+      pt.y = (v - centerY) * depth_md[depth_idx] * constant;
+      pt.z = depth_md[depth_idx] * 0.001;
+    }
+  }
+
+  pub_point_cloud_.publish (cloud_msg);
+}
+
+void OpenNINodelet::publishXYZRGBPointCloud (const sensor_msgs::ImageConstPtr& depth_msg, const sensor_msgs::ImageConstPtr& rgb_msg) const
+{
+  boost::shared_ptr<pcl::PointCloud<pcl::PointXYZRGB> > cloud_msg = boost::make_shared<pcl::PointCloud<pcl::PointXYZRGB> > ();
+  cloud_msg->header.stamp     = depth_msg->header.stamp;
+  cloud_msg->header.frame_id  = rgb_frame_id_;
+  cloud_msg->height           = depth_msg->height;
+  cloud_msg->width            = depth_msg->width;
+  cloud_msg->is_dense         = false;
+
+  // do not publish if rgb image is smaller than color image -> seg fault
+  if (rgb_msg->height < depth_msg->height || rgb_msg->width < depth_msg->width)
+  {
+    ROS_WARN("rgb image smaller than depth image... skipping point cloud for this frame rgb:%dx%d vs. depth:%3dx%d"
+            , rgb_msg->width, rgb_msg->height, depth_msg->width, depth_msg->height );
+    return;
+  }
+  cloud_msg->points.resize (cloud_msg->height * cloud_msg->width);
+
+  float constant = 1.0f / device_->getImageFocalLength (cloud_msg->width);
+  float centerX = (cloud_msg->width >> 1) - 0.5f;
+  float centerY = (cloud_msg->height >> 1) - 0.5f;
+  const float* depth_buffer = reinterpret_cast<const float*>(&depth_msg->data[0]);
+  const uint8_t* rgb_buffer = &rgb_msg->data[0];
+
+  // depth_msg already has the desired dimensions, but rgb_msg may be higher res.
+  unsigned color_step = 3 * rgb_msg->width / cloud_msg->width;
+  unsigned color_skip = 3 * (rgb_msg->height / cloud_msg->height - 1) * rgb_msg->width;
+  int color_idx = 0, depth_idx = 0;
+  pcl::PointCloud<pcl::PointXYZRGB>::iterator pt_iter = cloud_msg->begin ();
+  for (int v = 0; v < (int)cloud_msg->height; ++v, color_idx += color_skip)
+  {
+    for (int u = 0; u < (int)cloud_msg->width; ++u, color_idx += color_step, ++depth_idx, ++pt_iter)
+    {
+      pcl::PointXYZRGB& pt = *pt_iter;
+      float Z = depth_buffer[depth_idx];
+
+      // Check for invalid measurements
+      if (std::isnan (Z))
+      {
+        pt.x = pt.y = pt.z = Z;
+      }
+      else
+      {
+        // Fill in XYZ
+        pt.x = (u - centerX) * Z * constant;
+        pt.y = (v - centerY) * Z * constant;
+        pt.z = Z;
+      }
+
+      // Fill in color
+      RGBValue color;
+      color.Red   = rgb_buffer[color_idx];
+      color.Green = rgb_buffer[color_idx + 1];
+      color.Blue  = rgb_buffer[color_idx + 2];
+      color.Alpha = 0;
+      pt.rgb = color.float_value;
+    }
+  }
+
+  pub_point_cloud_rgb_.publish (cloud_msg);
+}
+
+sensor_msgs::CameraInfoPtr OpenNINodelet::fillCameraInfo (ros::Time time, bool is_rgb)
+{
+  sensor_msgs::CameraInfoPtr info_msg = boost::make_shared<sensor_msgs::CameraInfo > ();
+  info_msg->header.stamp    = time;
+  info_msg->header.frame_id = is_rgb ? rgb_frame_id_ : depth_frame_id_;
+  info_msg->width           = is_rgb ? image_width_ : depth_width_;
+  info_msg->height          = is_rgb ? image_height_ : depth_height_;
+
+#if ROS_VERSION_MINIMUM(1, 3, 0)
+  info_msg->D = std::vector<double>(5, 0.0);
+  info_msg->distortion_model = sensor_msgs::distortion_models::PLUMB_BOB;
+#else
+  info_msg->D.assign (0.0);
+#endif
+  info_msg->K.assign (0.0);
+  info_msg->R.assign (0.0);
+  info_msg->P.assign (0.0);
+  // Simple camera matrix: square pixels, principal point at center
+  double f = is_rgb ? device_->getImageFocalLength (image_width_) : device_->getDepthFocalLength (depth_width_);
+  info_msg->K[0] = info_msg->K[4] = f;
+  info_msg->K[2] = (info_msg->width / 2) - 0.5;
+  info_msg->K[5] = (info_msg->height / 2) - 0.5;
+  info_msg->K[8] = 1.0;
+  // no rotation: identity
+  info_msg->R[0] = info_msg->R[4] = info_msg->R[8] = 1.0;
+  // no rotation, no translation => P=K(I|0)=(K|0)
+  info_msg->P[0] = info_msg->P[5] = info_msg->K[0];
+  info_msg->P[2] = info_msg->K[2];
+  info_msg->P[6] = info_msg->K[5];
+  info_msg->P[10] = 1.0;
+
+  return info_msg;
+}
+
+void OpenNINodelet::configCallback (Config &config, uint32_t level)
+{
+  // image mode changed?
+  if (config.image_mode != config_.image_mode)
+  {
+    // does the device support the new image mode?
+    XnMapOutputMode image_mode, compatible_mode;
+    image_mode = mapConfigMode2XnMode (config.image_mode);
+
+    if (!device_->findCompatibleImageMode (image_mode, compatible_mode))
+    {
+      ROS_WARN ("Could not find any compatible image output mode for %d x %d @ %d.",
+              image_mode.nXRes, image_mode.nYRes, image_mode.nFPS);
+
+      // dont change!
+      config.image_mode = config_.image_mode;
+      return;
+    }
+
+    // can we get RGB values from new image size for our pointcloud?
+    XnMapOutputMode depth_mode = mapConfigMode2XnMode (config.depth_mode);
+    
+    if ( (pub_point_cloud_rgb_.getNumSubscribers () > 0) && (
+         (depth_mode.nXRes > image_mode.nXRes) || (depth_mode.nYRes > image_mode.nYRes) ||
+         (image_mode.nXRes % depth_mode.nXRes != 0) ) )
+    {
+      // we dont care about YRes, since SXGA works fine for kinect with all depth resolutions
+      ROS_WARN ("image mode not compatible to depth mode, since PointCloudXYZRGB has subscribers.");
+      config.image_mode = config_.image_mode;
+      return;
+    }
+
+    if (device_->isSynchronized ())
+      device_->setSynchronization (false);
+
+    device_->setImageOutputMode (compatible_mode);
+    // but store original request to enable downscaling of images
+    image_height_ = image_mode.nYRes;
+    image_width_  = image_mode.nXRes;
+    
+    updateSynchronization ();
+  }
+
+  if (config.debayering != config_.debayering)
+  {
+    //ugly casting
+    DeviceKinect* kinect = dynamic_cast<DeviceKinect*> (device_.get ());
+    if (kinect)
+    {
+      switch (config.debayering)
+      {
+        case OpenNI_Bilinear:
+          kinect->setDebayeringMethod (ImageBayerGRBG::Bilinear);
+          break;
+        case OpenNI_EdgeAware:
+          kinect->setDebayeringMethod (ImageBayerGRBG::EdgeAware);
+          break;
+        case OpenNI_EdgeAwareWeighted:
+          kinect->setDebayeringMethod (ImageBayerGRBG::EdgeAwareWeighted);
+          break;
+        default:
+          ROS_ERROR ("unknwon debayering method");
+          config.debayering = config_.debayering;
+          break;
+      }
+    }
+    else
+      ROS_INFO ("%s does not provide bayer images. This setting does not affect the output images.", device_->getProductName ());
+  }
+
+  if (config.depth_mode != config_.depth_mode)
+  {
+    XnMapOutputMode depth_mode, compatible_mode;
+    depth_mode = mapConfigMode2XnMode (config.depth_mode);
+    if (!device_->findCompatibleDepthMode (depth_mode, compatible_mode))
+    {
+      ROS_WARN ("Could not find any compatible depth output mode for %d x %d @ %d.",
+              depth_mode.nXRes, depth_mode.nYRes, depth_mode.nFPS);
+
+      // dont change!
+      config.depth_mode = config_.depth_mode;
+      return;
+    }
+
+    XnMapOutputMode image_mode = mapConfigMode2XnMode (config.image_mode);
+    if ( (pub_point_cloud_rgb_.getNumSubscribers () > 0) && (
+     (depth_mode.nXRes > image_mode.nXRes) || (depth_mode.nYRes > image_mode.nYRes) ||
+     (image_mode.nXRes % depth_mode.nXRes != 0) ) )
+    {
+      // we dont care about YRes, since SXGA works fine for kinect with all depth resolutions
+      ROS_WARN ("depth mode not compatible to image mode, since PointCloudXYZRGB has subscribers.");
+      config.depth_mode = config_.depth_mode;
+      return;
+    }
+
+    if (device_->isSynchronized ())
+      device_->setSynchronization (false);
+
+    device_->setDepthOutputMode (compatible_mode);
+    depth_height_ = depth_mode.nYRes;
+    depth_width_  = depth_mode.nXRes;
+
+    updateSynchronization ();
+  }
+
+  if (config.depth_registration != config_.depth_registration)
+  {
+    if (!config.depth_registration && pub_point_cloud_rgb_.getNumSubscribers () > 0)
+    {
+      ROS_WARN ("can not trurn of registration, since PointCloudXYZRGB has subscribers.");
+      config.depth_registration = true;
+      return;
+    }
+    else
+      device_->setDepthRegistration (config.depth_registration);
+  }
+  
+  config_ = config;
+}
+
+void OpenNINodelet::updateSynchronization ()
+{   
+  if (device_->isSynchronizationSupported () && !device_->isSynchronized () &&
+      device_->getImageOutputMode ().nFPS == device_->getDepthOutputMode ().nFPS &&
+      device_->isImageStreamRunning () && device_->isDepthStreamRunning () )
+    device_->setSynchronization (true);
+}
+
+void OpenNINodelet::updateModeMaps ()
+{
+  XnMapOutputMode output_mode;
+
+  output_mode.nXRes = XN_SXGA_X_RES;
+  output_mode.nYRes = XN_SXGA_Y_RES;
+  output_mode.nFPS  = 15;
+  xn2config_map_[output_mode] = OpenNI_SXGA_15Hz;
+  config2xn_map_[OpenNI_SXGA_15Hz] = output_mode;
+
+  output_mode.nXRes = XN_VGA_X_RES;
+  output_mode.nYRes = XN_VGA_Y_RES;
+  output_mode.nFPS  = 25;
+  xn2config_map_[output_mode] = OpenNI_VGA_25Hz;
+  config2xn_map_[OpenNI_VGA_25Hz] = output_mode;
+  output_mode.nFPS  = 30;
+  xn2config_map_[output_mode] = OpenNI_VGA_30Hz;
+  config2xn_map_[OpenNI_VGA_30Hz] = output_mode;
+
+  output_mode.nXRes = XN_QVGA_X_RES;
+  output_mode.nYRes = XN_QVGA_Y_RES;
+  output_mode.nFPS  = 25;
+  xn2config_map_[output_mode] = OpenNI_QVGA_25Hz;
+  config2xn_map_[OpenNI_QVGA_25Hz] = output_mode;
+  output_mode.nFPS  = 30;
+  xn2config_map_[output_mode] = OpenNI_QVGA_30Hz;
+  config2xn_map_[OpenNI_QVGA_30Hz] = output_mode;
+  output_mode.nFPS  = 60;
+  xn2config_map_[output_mode] = OpenNI_QVGA_60Hz;
+  config2xn_map_[OpenNI_QVGA_60Hz] = output_mode;
+
+  output_mode.nXRes = XN_QQVGA_X_RES;
+  output_mode.nYRes = XN_QQVGA_Y_RES;
+  output_mode.nFPS  = 25;
+  xn2config_map_[output_mode] = OpenNI_QQVGA_25Hz;
+  config2xn_map_[OpenNI_QQVGA_25Hz] = output_mode;
+  output_mode.nFPS  = 30;
+  xn2config_map_[output_mode] = OpenNI_QQVGA_30Hz;
+  config2xn_map_[OpenNI_QQVGA_30Hz] = output_mode;
+  output_mode.nFPS  = 60;
+  xn2config_map_[output_mode] = OpenNI_QQVGA_60Hz;
+  config2xn_map_[OpenNI_QQVGA_60Hz] = output_mode;
+}
+
+int OpenNINodelet::mapXnMode2ConfigMode (const XnMapOutputMode& output_mode) const
+{
+  std::map<XnMapOutputMode, int, modeComp>::const_iterator it = xn2config_map_.find (output_mode);
+
+  if (it == xn2config_map_.end ())
+  {
+    ROS_ERROR ("mode %dx%d@%d could not be found", output_mode.nXRes, output_mode.nYRes, output_mode.nFPS);
+    exit (-1);
+  }
+  else
+    return it->second;
+}
+
+XnMapOutputMode OpenNINodelet::mapConfigMode2XnMode (int mode) const
+{
+  std::map<int, XnMapOutputMode>::const_iterator it = config2xn_map_.find (mode);
+  if (it == config2xn_map_.end ())
+  {
+    ROS_ERROR ("mode %d could not be found", mode);
+    exit (-1);
+  }
+  else
+    return it->second;
+}
+}

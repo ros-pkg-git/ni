@@ -38,8 +38,10 @@
 #include <openni_camera/openni_image_bayer_grbg.h>
 #include <iostream>
 #include <sstream>
+#include <boost/thread/mutex.hpp>
 
 using namespace std;
+using namespace boost;
 
 namespace openni_wrapper
 {
@@ -54,6 +56,7 @@ DeviceKinect::DeviceKinect (xn::Context& context, const xn::NodeInfo& device_nod
   // device specific initialization
   XnStatus status;
 
+  unique_lock<mutex> image_lock(image_mutex_);
   // set kinect specific format. Thus input = uncompressed Bayer, output = grayscale = bypass = bayer
   status = image_generator_.SetIntProperty ("InputFormat", 6);
   if (status != XN_STATUS_OK)
@@ -63,7 +66,9 @@ DeviceKinect::DeviceKinect (xn::Context& context, const xn::NodeInfo& device_nod
   status = image_generator_.SetPixelFormat (XN_PIXEL_FORMAT_GRAYSCALE_8_BIT);
   if (status != XN_STATUS_OK)
     THROW_OPENNI_EXCEPTION ("Failed to set image pixel format to 8bit-grayscale. Reason: %s", xnGetStatusString (status));
-
+  image_lock.unlock ();
+  
+  lock_guard<mutex> depth_lock(depth_mutex_);
   // RegistrationType should be 2 (software) for Kinect, 1 (hardware) for PS
   status = depth_generator_.SetIntProperty ("RegistrationType", 2);
   if (status != XN_STATUS_OK)
@@ -72,8 +77,13 @@ DeviceKinect::DeviceKinect (xn::Context& context, const xn::NodeInfo& device_nod
 
 DeviceKinect::~DeviceKinect () throw ()
 {
+  depth_mutex_.lock ();
   depth_generator_.UnregisterFromNewDataAvailable (depth_callback_handle_);
+  depth_mutex_.unlock ();
+
+  image_mutex_.lock ();
   image_generator_.UnregisterFromNewDataAvailable (image_callback_handle_);
+  image_mutex_.unlock ();
 }
 
 bool DeviceKinect::isImageResizeSupported (unsigned input_width, unsigned input_height, unsigned output_width, unsigned output_height) const throw ()
@@ -103,4 +113,37 @@ Image* DeviceKinect::getCurrentImage (const xn::ImageMetaData& image_data) const
 {
   return new ImageBayerGRBG (image_data, debayering_method_);
 }
+
+void DeviceKinect::setSynchronization (bool on_off) throw (OpenNIException)
+{
+  if (on_off)
+    THROW_OPENNI_EXCEPTION ("Microsoft Kinect does not support Hardware synchronization.");
+}
+
+bool DeviceKinect::isSynchronized () const throw (OpenNIException)
+{
+  return false;
+}
+
+bool DeviceKinect::isSynchronizationSupported () const throw ()
+{
+  return false;
+}
+
+bool DeviceKinect::isDepthCropped () const throw (OpenNIException)
+{
+  return false;
+}
+
+void DeviceKinect::setDepthCropping (unsigned x, unsigned y, unsigned width, unsigned height) throw (OpenNIException)
+{
+  if (width != 0 && height != 0)
+    THROW_OPENNI_EXCEPTION ("Microsoft Kinect does not support cropping for the depth stream.");
+}
+
+bool DeviceKinect::isDepthCroppingSupported () const throw ()
+{
+  return false;
+}
+
 } //namespace

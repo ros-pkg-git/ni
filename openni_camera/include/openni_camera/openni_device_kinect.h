@@ -59,6 +59,16 @@ public:
 
   inline void setDebayeringMethod (const ImageBayerGRBG::DebayeringMethod& debayering_method) throw ();
   inline const ImageBayerGRBG::DebayeringMethod& getDebayeringMethod () const throw ();
+  
+  // these capabilities are not supported for kinect
+  virtual void setSynchronization (bool on_off) throw (OpenNIException);
+  virtual bool isSynchronized () const throw (OpenNIException);
+  virtual bool isSynchronizationSupported () const throw ();
+
+  virtual bool isDepthCropped () const throw (OpenNIException);
+  virtual void setDepthCropping (unsigned x, unsigned y, unsigned width, unsigned height) throw (OpenNIException);
+  virtual bool isDepthCroppingSupported () const throw ();
+
 protected:
   virtual Image* getCurrentImage (const xn::ImageMetaData& image_meta_data) const throw ();
   virtual void getAvailableModes () throw (OpenNIException);

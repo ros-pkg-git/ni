@@ -49,13 +49,13 @@ using namespace boost;
 namespace openni_wrapper
 {
 
-OpenNIDevice::OpenNIDevice (xn::Context& context, const xn::NodeInfo& device_node,
-                            const xn::NodeInfo& image_node, const xn::NodeInfo& depth_node) throw (OpenNIException)
-  : device_node_info_ (device_node)
-  , context_ (context)
-  , running_ (true) // Must be initialized before the threads!
-  , image_thread_ (&OpenNIDevice::ImageDataThreadFunction, this)
-  , depth_thread_ (&OpenNIDevice::DepthDataThreadFunction, this)
+OpenNIDevice::OpenNIDevice (xn::Context& context, const xn::NodeInfo& device_node, const xn::NodeInfo& image_node,
+                            const xn::NodeInfo& depth_node) throw (OpenNIException)
+: device_node_info_ (device_node)
+, context_ (context)
+, running_ (true) // Must be initialized before the threads!
+, image_thread_ (&OpenNIDevice::ImageDataThreadFunction, this)
+, depth_thread_ (&OpenNIDevice::DepthDataThreadFunction, this)
 {
   // create the production nodes
   XnStatus status = context_.CreateProductionTree (const_cast<xn::NodeInfo&>(depth_node));
@@ -66,12 +66,11 @@ OpenNIDevice::OpenNIDevice (xn::Context& context, const xn::NodeInfo& device_nod
   if (status != XN_STATUS_OK)
     THROW_OPENNI_EXCEPTION ("creating image generator failed. Reason: %s", xnGetStatusString (status));
 
-  // production node instances
+  // get production node instances
   status = depth_node.GetInstance (depth_generator_);
   if (status != XN_STATUS_OK)
     THROW_OPENNI_EXCEPTION ("creating depth generator instance failed. Reason: %s", xnGetStatusString (status));
 
-  // create the production nodes
   status = image_node.GetInstance (image_generator_);
   if (status != XN_STATUS_OK)
     THROW_OPENNI_EXCEPTION ("creating image generator instance failed. Reason: %s", xnGetStatusString (status));
@@ -79,9 +78,11 @@ OpenNIDevice::OpenNIDevice (xn::Context& context, const xn::NodeInfo& device_nod
 
 OpenNIDevice::~OpenNIDevice () throw ()
 {
-  image_mutex_.lock ();
+  // lock before changing running flag
   depth_mutex_.lock ();
+  image_mutex_.lock ();
   running_ = false;
+
   depth_condition_.notify_all ();
   image_condition_.notify_all ();
   image_mutex_.unlock ();
@@ -89,23 +90,27 @@ OpenNIDevice::~OpenNIDevice () throw ()
 
   image_thread_.join ();
   depth_thread_.join ();
-  // dont stop streams here, since there might be other copies of the device!!!
+
+  // stop streams
+  if (image_generator_.IsGenerating ())
+    image_generator_.StopGenerating ();
+
+  if (depth_generator_.IsGenerating ())
+    depth_generator_.StopGenerating ();
 }
 
 void OpenNIDevice::Init () throw (OpenNIException)
 {
   // call virtual function to find available modes specifically for each device type
-  this->getAvailableModes();
+  this->getAvailableModes ();
 
   // set Depth resolution here only once... since no other mode for kinect is available -> deactivating setDepthResolution method!
-  XnMapOutputMode output_mode;
-  getDefaultDepthMode (output_mode);
-  setDepthOutputMode (output_mode);
-  getDefaultImageMode (output_mode);
-  setImageOutputMode (output_mode);
+  setDepthOutputMode (getDefaultDepthMode ());
+  setImageOutputMode (getDefaultImageMode ());
 
   XnDouble pixel_size;
 
+  unique_lock<mutex> depth_lock (depth_mutex_);
   XnStatus status = depth_generator_.GetRealProperty ("ZPPS", pixel_size);
   if (status != XN_STATUS_OK)
     THROW_OPENNI_EXCEPTION ("reading the pixel size of IR camera failed. Reason: %s", xnGetStatusString (status));
@@ -136,11 +141,15 @@ void OpenNIDevice::Init () throw (OpenNIException)
 
   //register callback functions
   depth_generator_.RegisterToNewDataAvailable (OpenNIDevice::NewDepthDataAvailable, this, depth_callback_handle_);
+  depth_lock.unlock ();
+
+  lock_guard<mutex> image_lock (image_mutex_);
   image_generator_.RegisterToNewDataAvailable (OpenNIDevice::NewImageDataAvailable, this, image_callback_handle_);
 }
 
 void OpenNIDevice::startImageStream () throw (OpenNIException)
 {
+  lock_guard<mutex> image_lock (image_mutex_);
   if (!image_generator_.IsGenerating ())
   {
     XnStatus status = image_generator_.StartGenerating ();
@@ -151,6 +160,7 @@ void OpenNIDevice::startImageStream () throw (OpenNIException)
 
 void OpenNIDevice::stopImageStream () throw (OpenNIException)
 {
+  lock_guard<mutex> image_lock (image_mutex_);
   if (image_generator_.IsGenerating ())
   {
     XnStatus status = image_generator_.StopGenerating ();
@@ -161,9 +171,11 @@ void OpenNIDevice::stopImageStream () throw (OpenNIException)
 
 void OpenNIDevice::startDepthStream () throw (OpenNIException)
 {
+  lock_guard<mutex> depth_lock (depth_mutex_);
   if (!depth_generator_.IsGenerating ())
   {
     XnStatus status = depth_generator_.StartGenerating ();
+
     if (status != XN_STATUS_OK)
       THROW_OPENNI_EXCEPTION ("starting depth stream failed. Reason: %s", xnGetStatusString (status));
   }
@@ -171,26 +183,32 @@ void OpenNIDevice::startDepthStream () throw (OpenNIException)
 
 void OpenNIDevice::stopDepthStream () throw (OpenNIException)
 {
+  lock_guard<mutex> depth_lock (depth_mutex_);
   if (depth_generator_.IsGenerating ())
   {
     XnStatus status = depth_generator_.StopGenerating ();
+
     if (status != XN_STATUS_OK)
       THROW_OPENNI_EXCEPTION ("stopping depth stream failed. Reason: %s", xnGetStatusString (status));
   }
 }
 
-bool OpenNIDevice::isImageRunning () const throw (OpenNIException)
+bool OpenNIDevice::isImageStreamRunning () const throw (OpenNIException)
 {
+  lock_guard<mutex> image_lock (image_mutex_);
   return image_generator_.IsGenerating ();
 }
 
-bool OpenNIDevice::isDepthRunning () const throw (OpenNIException)
+bool OpenNIDevice::isDepthStreamRunning () const throw (OpenNIException)
 {
+  lock_guard<mutex> depth_lock (depth_mutex_);
   return depth_generator_.IsGenerating ();
 }
 
 void OpenNIDevice::setDepthRegistration (bool on_off) throw (OpenNIException)
 {
+  lock_guard<mutex> depth_lock (depth_mutex_);
+  lock_guard<mutex> image_lock (image_mutex_);
   if (on_off && !depth_generator_.GetAlternativeViewPointCap ().IsViewPointAs (image_generator_))
   {
     if (depth_generator_.GetAlternativeViewPointCap ().IsViewPointSupported (image_generator_))
@@ -205,6 +223,7 @@ void OpenNIDevice::setDepthRegistration (bool on_off) throw (OpenNIException)
   else if (!on_off)
   {
     XnStatus status = depth_generator_.GetAlternativeViewPointCap ().ResetViewPoint ();
+
     if (status != XN_STATUS_OK)
       THROW_OPENNI_EXCEPTION ("turning registration off failed. Reason: %s", xnGetStatusString (status));
   }
@@ -214,28 +233,102 @@ bool OpenNIDevice::isDepthRegistered () const throw (OpenNIException)
 {
   xn::DepthGenerator& depth_generator = const_cast<xn::DepthGenerator&>(depth_generator_);
   xn::ImageGenerator& image_generator = const_cast<xn::ImageGenerator&>(image_generator_);
+
+  lock_guard<mutex> depth_lock (depth_mutex_);
+  lock_guard<mutex> image_lock (image_mutex_);
   return (depth_generator.GetAlternativeViewPointCap ().IsViewPointAs (image_generator));
+}
+
+bool OpenNIDevice::isSynchronizationSupported () const throw ()
+{
+  lock_guard<mutex> depth_lock (depth_mutex_);
+  return depth_generator_.IsCapabilitySupported (XN_CAPABILITY_FRAME_SYNC);
+}
+
+void OpenNIDevice::setSynchronization (bool on_off) throw (OpenNIException)
+{
+  lock_guard<mutex> image_lock (image_mutex_);
+  lock_guard<mutex> depth_lock (depth_mutex_);
+  XnStatus status;
+
+  if (on_off && depth_generator_.GetFrameSyncCap ().CanFrameSyncWith (image_generator_) && !depth_generator_.GetFrameSyncCap ().IsFrameSyncedWith (image_generator_))
+  {
+    status = depth_generator_.GetFrameSyncCap ().FrameSyncWith (image_generator_);
+    if (status != XN_STATUS_OK)
+      THROW_OPENNI_EXCEPTION ("could not turn on frame synchronization. Reason: %s", xnGetStatusString (status));
+  }
+  else if (!on_off && depth_generator_.GetFrameSyncCap ().CanFrameSyncWith (image_generator_) && depth_generator_.GetFrameSyncCap ().IsFrameSyncedWith (image_generator_))
+  {
+    status = depth_generator_.GetFrameSyncCap ().StopFrameSyncWith (image_generator_);
+    if (status != XN_STATUS_OK)
+      THROW_OPENNI_EXCEPTION ("could not turn off frame synchronization. Reason: %s", xnGetStatusString (status));
+  }
+}
+
+bool OpenNIDevice::isSynchronized () const throw (OpenNIException)
+{
+  lock_guard<mutex> image_lock (image_mutex_);
+  lock_guard<mutex> depth_lock (depth_mutex_);
+  xn::DepthGenerator& depth_generator = const_cast<xn::DepthGenerator&>(depth_generator_);
+  xn::ImageGenerator& image_generator = const_cast<xn::ImageGenerator&>(image_generator_);
+  return (depth_generator.GetFrameSyncCap ().CanFrameSyncWith (image_generator) && depth_generator.GetFrameSyncCap ().IsFrameSyncedWith (image_generator));
+}
+
+bool OpenNIDevice::isDepthCroppingSupported () const throw ()
+{
+  lock_guard<mutex> depth_lock (depth_mutex_);
+  return depth_generator_.IsCapabilitySupported (XN_CAPABILITY_CROPPING);
+}
+
+bool OpenNIDevice::isDepthCropped () const throw (OpenNIException)
+{
+  lock_guard<mutex> depth_lock (depth_mutex_);
+  XnCropping cropping;
+  xn::DepthGenerator& depth_generator = const_cast<xn::DepthGenerator&>(depth_generator_);
+  XnStatus status = depth_generator.GetCroppingCap ().GetCropping (cropping);
+  if (status != XN_STATUS_OK)
+    THROW_OPENNI_EXCEPTION ("could not read cropping information for depth stream. Reason: %s", xnGetStatusString (status));
+
+  return cropping.bEnabled;
+}
+
+void OpenNIDevice::setDepthCropping (unsigned x, unsigned y, unsigned width, unsigned height) throw (OpenNIException)
+{
+  lock_guard<mutex> depth_lock (depth_mutex_);
+  XnCropping cropping;
+  cropping.nXOffset = x;
+  cropping.nYOffset = y;
+  cropping.nXSize   = width;
+  cropping.nYSize   = height;
+
+  cropping.bEnabled = (width != 0 && height != 0);
+  XnStatus status = depth_generator_.GetCroppingCap ().SetCropping (cropping);
+  if (status != XN_STATUS_OK)
+    THROW_OPENNI_EXCEPTION ("could not set cropping information for depth stream. Reason: %s", xnGetStatusString (status));
 }
 
 void OpenNIDevice::ImageDataThreadFunction () throw (OpenNIException)
 {
   while (running_)
   {
-    unique_lock<mutex> lock (image_mutex_);
+    // lock before checking running flag
+    unique_lock<mutex> image_lock (image_mutex_);
     if (!running_)
       return;
-    image_condition_.wait (lock);
+    image_condition_.wait (image_lock);
     if (!running_)
       return;
 
     image_generator_.WaitAndUpdateData ();
     xn::ImageMetaData image_data;
     image_generator_.GetMetaData (image_data);
-    //usleep(100000);
+
+    image_lock.unlock ();
+
     Image* image = getCurrentImage (image_data);
-    for (map< OpenNIDevice::CallbackHandle, pair< ImageCallbackFunction, void* > >::iterator callbackIt = image_callback_.begin (); callbackIt != image_callback_.end (); ++callbackIt)
+    for (map< OpenNIDevice::CallbackHandle, ActualImageCallbackFunction >::iterator callbackIt = image_callback_.begin (); callbackIt != image_callback_.end (); ++callbackIt)
     {
-      callbackIt->second.first.operator()(*image, callbackIt->second.second);
+      callbackIt->second.operator()(*image);
     }
     delete image;
   }
@@ -245,41 +338,46 @@ void OpenNIDevice::DepthDataThreadFunction () throw (OpenNIException)
 {
   while (running_)
   {
-    unique_lock<mutex> lock (depth_mutex_);
+    // lock before checking running flag
+    unique_lock<mutex> depth_lock (depth_mutex_);
     if (!running_)
       return;
-    depth_condition_.wait (lock);
+    depth_condition_.wait (depth_lock);
     if (!running_)
       return;
 
     depth_generator_.WaitAndUpdateData ();
     xn::DepthMetaData depth_data;
     depth_generator_.GetMetaData (depth_data);
-    DepthImage depth_image (depth_data, baseline_, getDepthFocalLength (),
-                            shadow_value_, no_sample_value_);
+    depth_lock.unlock ();
 
-    for (map< OpenNIDevice::CallbackHandle, pair< DepthImageCallbackFunction, void* > >::iterator callbackIt = depth_callback_.begin (); callbackIt != depth_callback_.end (); ++callbackIt)
+    DepthImage depth_image (depth_data, baseline_, getDepthFocalLength (), shadow_value_, no_sample_value_);
+
+    for (map< OpenNIDevice::CallbackHandle, ActualDepthImageCallbackFunction >::iterator callbackIt = depth_callback_.begin ();
+         callbackIt != depth_callback_.end (); ++callbackIt)
     {
-      callbackIt->second.first.operator()(depth_image, callbackIt->second.second);
+      callbackIt->second.operator()(depth_image);
     }
   }
 }
 
 void OpenNIDevice::NewDepthDataAvailable (xn::ProductionNode& node, void* cookie) throw ()
 {
+  //cout << "NewDepthDataAvailable" << endl;
   OpenNIDevice* device = reinterpret_cast<OpenNIDevice*>(cookie);
   device->depth_condition_.notify_all ();
 }
 
 void OpenNIDevice::NewImageDataAvailable (xn::ProductionNode& node, void* cookie) throw ()
 {
+  //cout << "NewImageDataAvailable" << endl;
   OpenNIDevice* device = reinterpret_cast<OpenNIDevice*>(cookie);
   device->image_condition_.notify_all ();
 }
 
 OpenNIDevice::CallbackHandle OpenNIDevice::registerImageCallback (const ImageCallbackFunction& callback, void* custom_data) throw ()
 {
-  image_callback_[image_callback_handle_counter_] = make_pair (callback, custom_data);
+  image_callback_[image_callback_handle_counter_] = boost::bind (callback, _1, custom_data);
   return image_callback_handle_counter_++;
 }
 
@@ -290,7 +388,7 @@ bool OpenNIDevice::unregisterImageCallback (const OpenNIDevice::CallbackHandle& 
 
 OpenNIDevice::CallbackHandle OpenNIDevice::registerDepthCallback (const DepthImageCallbackFunction& callback, void* custom_data) throw ()
 {
-  depth_callback_[depth_callback_handle_counter_] = make_pair (callback, custom_data);
+  depth_callback_[depth_callback_handle_counter_] = boost::bind (callback, _1, custom_data);
   return depth_callback_handle_counter_++;
 }
 
@@ -309,21 +407,72 @@ const char* OpenNIDevice::getConnectionString () const throw ()
   return device_node_info_.GetCreationInfo ();
 }
 
-void OpenNIDevice::getDeviceInfo (unsigned short& vendor_id, unsigned short& product_id, unsigned char& bus, unsigned char& address) const throw ()
+unsigned short OpenNIDevice::getVendorID () const throw ()
 {
+  unsigned short vendor_id;
+  unsigned short product_id;
+  unsigned char bus;
+  unsigned char address;
   sscanf (device_node_info_.GetCreationInfo (), "%hx/%hx@%hhu/%hhu", &vendor_id, &product_id, &bus, &address);
+
+  return vendor_id;
 }
 
-bool OpenNIDevice::findFittingImageMode (const XnMapOutputMode& output_mode, XnMapOutputMode& mode ) const throw (OpenNIException)
+unsigned short OpenNIDevice::getProductID () const throw ()
 {
-  if (isImageModeSupported(output_mode))
+  unsigned short vendor_id;
+  unsigned short product_id;
+  unsigned char bus;
+  unsigned char address;
+  sscanf (device_node_info_.GetCreationInfo (), "%hx/%hx@%hhu/%hhu", &vendor_id, &product_id, &bus, &address);
+
+  return product_id;
+}
+
+unsigned char OpenNIDevice::getBus () const throw ()
+{
+  unsigned short vendor_id;
+  unsigned short product_id;
+  unsigned char bus;
+  unsigned char address;
+  sscanf (device_node_info_.GetCreationInfo (), "%hx/%hx@%hhu/%hhu", &vendor_id, &product_id, &bus, &address);
+
+  return bus;
+}
+
+unsigned char OpenNIDevice::getAddress () const throw ()
+{
+  unsigned short vendor_id;
+  unsigned short product_id;
+  unsigned char bus;
+  unsigned char address;
+  sscanf (device_node_info_.GetCreationInfo (), "%hx/%hx@%hhu/%hhu", &vendor_id, &product_id, &bus, &address);
+
+  return address;
+}
+
+const char* OpenNIDevice::getVendorName () const throw ()
+{
+  XnProductionNodeDescription& description = const_cast<XnProductionNodeDescription&>(device_node_info_.GetDescription ());
+  return description.strVendor;
+}
+
+const char* OpenNIDevice::getProductName () const throw ()
+{
+  XnProductionNodeDescription& description = const_cast<XnProductionNodeDescription&>(device_node_info_.GetDescription ());
+  return description.strName;
+}
+
+bool OpenNIDevice::findCompatibleImageMode (const XnMapOutputMode& output_mode, XnMapOutputMode& mode) const throw (OpenNIException)
+{
+  if (isImageModeSupported (output_mode))
   {
     mode = output_mode;
     return true;
   }
   else
   {
-    for (vector<XnMapOutputMode>::const_iterator modeIt = available_image_modes_.begin (); modeIt != available_image_modes_.end(); ++modeIt)
+    for (vector<XnMapOutputMode>::const_iterator modeIt = available_image_modes_.begin (); modeIt != available_image_modes_.end (); ++modeIt)
     {
       if (modeIt->nFPS == output_mode.nFPS && isImageResizeSupported (modeIt->nXRes, modeIt->nYRes, output_mode.nXRes, output_mode.nYRes))
       {
@@ -336,16 +485,16 @@ bool OpenNIDevice::findFittingImageMode (const XnMapOutputMode& output_mode, XnM
   return false;
 }
 
-bool OpenNIDevice::findFittingDepthMode (const XnMapOutputMode& output_mode, XnMapOutputMode& mode ) const throw (OpenNIException)
+bool OpenNIDevice::findCompatibleDepthMode (const XnMapOutputMode& output_mode, XnMapOutputMode& mode) const throw (OpenNIException)
 {
-  if (isDepthModeSupported(output_mode))
+  if (isDepthModeSupported (output_mode))
   {
     mode = output_mode;
     return true;
   }
   else
   {
-    for (vector<XnMapOutputMode>::const_iterator modeIt = available_depth_modes_.begin (); modeIt != available_depth_modes_.end(); ++modeIt)
+    for (vector<XnMapOutputMode>::const_iterator modeIt = available_depth_modes_.begin (); modeIt != available_depth_modes_.end (); ++modeIt)
     {
       if (modeIt->nFPS == output_mode.nFPS && isImageResizeSupported (modeIt->nXRes, modeIt->nYRes, output_mode.nXRes, output_mode.nYRes))
       {
@@ -360,38 +509,42 @@ bool OpenNIDevice::findFittingDepthMode (const XnMapOutputMode& output_mode, XnM
 
 void OpenNIDevice::getAvailableModes () throw (OpenNIException)
 {
-  available_image_modes_.clear();
+  available_image_modes_.clear ();
+  unique_lock<mutex> image_lock (image_mutex_);
   unsigned mode_count = image_generator_.GetSupportedMapOutputModesCount ();
   XnMapOutputMode* modes = new XnMapOutputMode[mode_count];
   XnStatus status = image_generator_.GetSupportedMapOutputModes (modes, mode_count);
-  if ( status != XN_STATUS_OK)
+  if (status != XN_STATUS_OK)
   {
     delete[] modes;
     THROW_OPENNI_EXCEPTION ("Could not enumerate image stream output modes. Reason: %s", xnGetStatusString (status));
   }
+  image_lock.unlock ();
 
-  for ( unsigned modeIdx = 0 ; modeIdx < mode_count; ++modeIdx)
+  for (unsigned modeIdx = 0; modeIdx < mode_count; ++modeIdx)
     available_image_modes_.push_back (modes[modeIdx]);
   delete[] modes;
 
-  available_depth_modes_.clear();
+  available_depth_modes_.clear ();
+  unique_lock<mutex> depth_lock (depth_mutex_);
   mode_count = depth_generator_.GetSupportedMapOutputModesCount ();
   modes = new XnMapOutputMode[mode_count];
   status = depth_generator_.GetSupportedMapOutputModes (modes, mode_count);
-  if ( status != XN_STATUS_OK)
+  if (status != XN_STATUS_OK)
   {
     delete[] modes;
     THROW_OPENNI_EXCEPTION ("Could not enumerate depth stream output modes. Reason: %s", xnGetStatusString (status));
   }
+  depth_lock.unlock ();
 
-  for ( unsigned modeIdx = 0 ; modeIdx < mode_count; ++modeIdx)
+  for (unsigned modeIdx = 0; modeIdx < mode_count; ++modeIdx)
     available_depth_modes_.push_back (modes[modeIdx]);
   delete[] modes;
 }
 
 bool OpenNIDevice::isImageModeSupported (const XnMapOutputMode& output_mode) const throw (OpenNIException)
 {
-  for (vector<XnMapOutputMode>::const_iterator modeIt = available_image_modes_.begin (); modeIt != available_image_modes_.end(); ++modeIt)
+  for (vector<XnMapOutputMode>::const_iterator modeIt = available_image_modes_.begin (); modeIt != available_image_modes_.end (); ++modeIt)
   {
     if (modeIt->nFPS == output_mode.nFPS && modeIt->nXRes == output_mode.nXRes && modeIt->nYRes == output_mode.nYRes)
       return true;
@@ -401,7 +554,7 @@ bool OpenNIDevice::isImageModeSupported (const XnMapOutputMode& output_mode) con
 
 bool OpenNIDevice::isDepthModeSupported (const XnMapOutputMode& output_mode) const throw (OpenNIException)
 {
-  for (vector<XnMapOutputMode>::const_iterator modeIt = available_depth_modes_.begin (); modeIt != available_depth_modes_.end(); ++modeIt)
+  for (vector<XnMapOutputMode>::const_iterator modeIt = available_depth_modes_.begin (); modeIt != available_depth_modes_.end (); ++modeIt)
   {
     if (modeIt->nFPS == output_mode.nFPS && modeIt->nXRes == output_mode.nXRes && modeIt->nYRes == output_mode.nYRes)
       return true;
@@ -409,18 +562,19 @@ bool OpenNIDevice::isDepthModeSupported (const XnMapOutputMode& output_mode) con
   return false;
 }
 
-void OpenNIDevice::getDefaultImageMode (XnMapOutputMode& output_mode) const throw ()
+const XnMapOutputMode&  OpenNIDevice::getDefaultImageMode () const throw ()
 {
-  output_mode = available_image_modes_[0];
+  return available_image_modes_[0];
 }
 
-void OpenNIDevice::getDefaultDepthMode (XnMapOutputMode& output_mode) const throw ()
+const XnMapOutputMode& OpenNIDevice::getDefaultDepthMode () const throw ()
 {
-  output_mode = available_depth_modes_[0];
+  return available_depth_modes_[0];
 }
 
 void OpenNIDevice::setImageOutputMode (const XnMapOutputMode& output_mode) throw (OpenNIException)
 {
+  lock_guard<mutex> image_lock (image_mutex_);
   XnStatus status = image_generator_.SetMapOutputMode (output_mode);
   if (status != XN_STATUS_OK)
     THROW_OPENNI_EXCEPTION ("Could not set image stream output mode to %dx%d@%d. Reason: %s", output_mode.nXRes, output_mode.nYRes, output_mode.nFPS, xnGetStatusString (status));
@@ -428,23 +582,32 @@ void OpenNIDevice::setImageOutputMode (const XnMapOutputMode& output_mode) throw
 
 void OpenNIDevice::setDepthOutputMode (const XnMapOutputMode& output_mode) throw (OpenNIException)
 {
+  lock_guard<mutex> depth_lock (depth_mutex_);
   XnStatus status = depth_generator_.SetMapOutputMode (output_mode);
   if (status != XN_STATUS_OK)
     THROW_OPENNI_EXCEPTION ("Could not set depth stream output mode to %dx%d@%d. Reason: %s", output_mode.nXRes, output_mode.nYRes, output_mode.nFPS, xnGetStatusString (status));
 }
 
-void OpenNIDevice::getImageOutputMode (XnMapOutputMode& output_mode) const throw (OpenNIException)
+XnMapOutputMode OpenNIDevice::getImageOutputMode () const throw (OpenNIException)
 {
+  lock_guard<mutex> image_lock (image_mutex_);
+  XnMapOutputMode output_mode;
   XnStatus status = image_generator_.GetMapOutputMode (output_mode);
   if (status != XN_STATUS_OK)
     THROW_OPENNI_EXCEPTION ("Could not get image stream output mode. Reason: %s", xnGetStatusString (status));
+
+  return output_mode;
 }
 
-void OpenNIDevice::getDepthOutputMode (XnMapOutputMode& output_mode) const throw (OpenNIException)
+XnMapOutputMode OpenNIDevice::getDepthOutputMode () const throw (OpenNIException)
 {
+  lock_guard<mutex> depth_lock (depth_mutex_);
+  XnMapOutputMode output_mode;
   XnStatus status = depth_generator_.GetMapOutputMode (output_mode);
   if (status != XN_STATUS_OK)
     THROW_OPENNI_EXCEPTION ("Could not get depth stream output mode. Reason: %s", xnGetStatusString (status));
+
+  return output_mode;
 }
 
 const float OpenNIDevice::rgb_focal_length_SXGA_ = 1050;

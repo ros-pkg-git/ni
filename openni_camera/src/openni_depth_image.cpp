@@ -37,6 +37,7 @@
 #include <openni_camera/openni_depth_image.h>
 #include <sstream>
 #include <limits>
+#include <iostream>
 
 using namespace std;
 
@@ -80,7 +81,7 @@ void DepthImage::fillDepthImage (unsigned width, unsigned height, float* depth_b
       }
     }
     // if we have padding
-    if (bufferSkip)
+    if (bufferSkip > 0)
     {
       char* cBuffer = reinterpret_cast<char*>(depth_buffer);
       depth_buffer = reinterpret_cast<float*>(cBuffer + bufferSkip);
@@ -90,15 +91,19 @@ void DepthImage::fillDepthImage (unsigned width, unsigned height, float* depth_b
 
 void DepthImage::fillDisparityImage (unsigned width, unsigned height, float* disparity_buffer, unsigned line_step) const throw (OpenNIException)
 {
-  /// @todo line_step is not used in this function!
   if (width > depth_md_.XRes () || height > depth_md_.YRes ())
     THROW_OPENNI_EXCEPTION ("upsampling not supported: %d x %d -> %d x %d", depth_md_.XRes (), depth_md_.YRes (), width, height);
 
   if (depth_md_.XRes () % width != 0 || depth_md_.YRes () % height != 0)
     THROW_OPENNI_EXCEPTION ("downsampling only supported for integer scale: %d x %d -> %d x %d", depth_md_.XRes (), depth_md_.YRes (), width, height);
 
+  if (line_step == 0)
+    line_step = width * sizeof (float);
+
   unsigned xStep = depth_md_.XRes () / width;
   unsigned ySkip = (depth_md_.YRes () / height - 1) * depth_md_.XRes ();
+
+  unsigned bufferSkip = line_step - width * sizeof (float);
 
   // Fill in the depth image data
   // iterate over all elements and fill disparity matrix: disp[x,y] = f * b / z_distance[x,y];
@@ -115,6 +120,13 @@ void DepthImage::fillDisparityImage (unsigned width, unsigned height, float* dis
         *disparity_buffer = 0.0;
       else
         *disparity_buffer = constant / (double)depth_md_[depthIdx];
+    }
+
+    // if we have padding
+    if (bufferSkip > 0)
+    {
+      char* cBuffer = reinterpret_cast<char*>(disparity_buffer);
+      disparity_buffer = reinterpret_cast<float*>(cBuffer + bufferSkip);
     }
   }
 }
