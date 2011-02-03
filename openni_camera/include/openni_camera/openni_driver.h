@@ -1,7 +1,7 @@
 /*
  * Software License Agreement (BSD License)
  *
- *  Copyright (c) 2010
+ *  Copyright (c) 2011 Willow Garage, Inc.
  *    Suat Gedikli <gedikli@willowgarage.com>
  *
  *  All rights reserved.
