@@ -151,7 +151,7 @@ OpenNIDriver::~OpenNIDriver () throw ()
   }
   catch (...)
   {}
-  
+
   context_.Shutdown ();
 }
 

@@ -52,6 +52,16 @@ using namespace std;
 using namespace openni_wrapper;
 namespace openni_camera
 {
+inline bool operator == (const XnMapOutputMode& mode1, const XnMapOutputMode& mode2)
+{
+  return (mode1.nXRes == mode2.nXRes && mode1.nYRes == mode2.nYRes && mode1.nFPS == mode2.nFPS);
+}
+inline bool operator != (const XnMapOutputMode& mode1, const XnMapOutputMode& mode2)
+{
+  return !(mode1 == mode2);
+}
+
+
 PLUGINLIB_DECLARE_CLASS (openni_camera, OpenNINodelet, openni_camera::OpenNINodelet, nodelet::Nodelet);
 
 typedef union
@@ -67,10 +77,19 @@ typedef union
   long long_value;
 } RGBValue;
 
+OpenNINodelet::~OpenNINodelet ()
+{
+  device_->stopDepthStream ();
+  device_->stopImageStream ();
+}
+
 void OpenNINodelet::onInit ()
 {
   ros::NodeHandle comm_nh (getNodeHandle ().resolveName ("camera")); // for topics, services
   ros::NodeHandle param_nh = getPrivateNodeHandle (); // for parameters
+
+  updateModeMaps ();      // registering mapping from config modes to XnModes and vice versa
+  setupDevice (param_nh); // will change config_ to default values or user given values from param server
 
   param_nh.param ("rgb_frame_id", rgb_frame_id_, string (""));
   if (rgb_frame_id_.empty ())
@@ -103,18 +122,15 @@ void OpenNINodelet::onInit ()
   depth_rgb_sync_.reset (new Synchronizer (sync_policy));
   depth_rgb_sync_->registerCallback (boost::bind (&OpenNINodelet::publishXYZRGBPointCloud, this, _1, _2));
 
-  updateModeMaps ();
-  setupDevice (comm_nh, param_nh);
-
   // initialize dynamic reconfigure
   reconfigure_server_.reset (new ReconfigureServer (reconfigure_mutex_, param_nh));
   reconfigure_mutex_.lock ();
   reconfigure_server_->updateConfig (config_);
-  reconfigure_mutex_.unlock ();
   reconfigure_server_->setCallback (boost::bind (&OpenNINodelet::configCallback, this, _1, _2));
+  reconfigure_mutex_.unlock ();
 }
 
-void OpenNINodelet::setupDevice (ros::NodeHandle& comm_nh, ros::NodeHandle& param_nh)
+void OpenNINodelet::setupDevice (ros::NodeHandle& param_nh)
 {
   // Initialize the openni device
   OpenNIDriver& driver = OpenNIDriver::getInstance ();
@@ -142,28 +158,26 @@ void OpenNINodelet::setupDevice (ros::NodeHandle& comm_nh, ros::NodeHandle& para
     ROS_WARN ("[%s] device_id is not set! Using first device.", getName ().c_str ());
     device_ = driver.getDeviceByIndex (0);
   }
+  else if (device_id.find ('@') != string::npos)
+  {
+    size_t pos = device_id.find ('@');
+    unsigned bus = atoi (device_id.substr (0, pos).c_str ());
+    unsigned address = atoi (device_id.substr (pos + 1, device_id.length () - pos - 1).c_str ());
+    ROS_INFO ("[%s] searching for device with bus@address = %d@%d", getName ().c_str (), bus, address);
+    device_ = driver.getDeviceByAddress (bus, address);
+  }
+  else if (device_id[0] == '#')
+  {
+    unsigned index = atoi (device_id.c_str () + 1);
+    ROS_INFO ("[%s] searching for device with index = %d", getName ().c_str (), index);
+    device_ = driver.getDeviceByIndex (index - 1);
+  }
   else
   {
-    if (device_id.find ('@') != string::npos)
-    {
-      size_t pos = device_id.find ('@');
-      unsigned bus = atoi (device_id.substr (0, pos).c_str ());
-      unsigned address = atoi (device_id.substr (pos + 1, device_id.length () - pos - 1).c_str ());
-      ROS_INFO ("[%s] searching for device with bus@address = %d@%d", getName ().c_str (), bus, address);
-      device_ = driver.getDeviceByAddress (bus, address);
-    }
-    else if (device_id[0] == '#')
-    {
-      unsigned index = atoi (device_id.c_str () + 1);
-      ROS_INFO ("[%s] searching for device with index = %d", getName ().c_str (), index);
-      device_ = driver.getDeviceByIndex (index - 1);
-    }
-    else
-    {
-      ROS_INFO ("[%s] searching for device with serial number = %s", getName ().c_str (), device_id.c_str ());
-      device_ = driver.getDeviceBySerialNumber (device_id);
-    }
+    ROS_INFO ("[%s] searching for device with serial number = %s", getName ().c_str (), device_id.c_str ());
+    device_ = driver.getDeviceBySerialNumber (device_id);
   }
+
   if (!device_)
   {
     ROS_ERROR ("[%s] No matching device found.", getName ().c_str ());
@@ -178,23 +192,57 @@ void OpenNINodelet::setupDevice (ros::NodeHandle& comm_nh, ros::NodeHandle& para
   device_->registerImageCallback (&OpenNINodelet::imageCallback, *this);
   device_->registerDepthCallback (&OpenNINodelet::depthCallback, *this);
 
-  device_->setImageOutputMode ( device_->getDefaultImageMode () );
-  config_.image_mode = mapXnMode2ConfigMode (device_->getDefaultImageMode ());
-  device_->setDepthOutputMode ( device_->getDefaultDepthMode () );
-  config_.depth_mode = mapXnMode2ConfigMode (device_->getDefaultImageMode ());
-  device_->setDepthRegistration (false);
-  config_.depth_registration = false;
-  config_.debayering = OpenNI_Bilinear;
+  bool registration = false;
+  param_nh.param ("registration", registration, false );
+  config_.depth_registration = registration;
 
-  image_width_  = device_->getDefaultImageMode ().nXRes;
-  image_height_ = device_->getDefaultImageMode ().nYRes;
-  depth_width_  = device_->getDefaultDepthMode ().nXRes;
-  depth_height_ = device_->getDefaultDepthMode ().nYRes;
+  int debayering_method = 0;
+  param_nh.param ("debayering", debayering_method, 0 );
+  if(debayering_method > 2 || debayering_method < 0)
+  {
+    ROS_ERROR ("Unknown debayering method %d. Only Folowing values are available: Bilinear (0), EdgeAware (1), EdgeAwareWeighted (2). Falling back to Bilinear (0).", debayering_method);
+    debayering_method = 0;
+  }
+  config_.debayering = debayering_method;
+
+  int image_mode = mapXnMode2ConfigMode (device_->getDefaultImageMode ());
+  param_nh.param ("image_mode", image_mode, image_mode );
+  if (image_mode < config_.__getMin__().image_mode  || image_mode > config_.__getMax__ ().image_mode ||
+      !isImageModeSupported (image_mode))
+  {
+    XnMapOutputMode image_md = device_->getDefaultImageMode ();
+    ROS_ERROR ("Unknown or unsopported image mode %d. Falling back to default mode %dx%d@%d.", image_mode, image_md.nXRes, image_md.nYRes, image_md.nFPS);
+    image_mode = mapXnMode2ConfigMode (image_md);
+  }
+  config_.image_mode = image_mode;
+
+  int depth_mode = mapXnMode2ConfigMode (device_->getDefaultDepthMode ());
+  param_nh.param ("depth_mode", depth_mode, depth_mode );
+  if (depth_mode < OpenNI_VGA_30Hz || depth_mode > config_.__getMax__ ().image_mode ||
+      !isDepthModeSupported (depth_mode))
+  {
+    XnMapOutputMode depth_md = device_->getDefaultImageMode ();
+    ROS_ERROR ("Unknown or unsopported depth mode %d. Falling back to default mode %dx%d@%d.", depth_mode, depth_md.nXRes, depth_md.nYRes, depth_md.nFPS);
+    depth_mode = mapXnMode2ConfigMode (depth_md);
+  }
+  config_.depth_mode = depth_mode;
+
+  XnMapOutputMode image_md = mapConfigMode2XnMode ( config_.image_mode);
+  image_width_  = image_md.nXRes;
+  image_height_ = image_md.nYRes;
+
+  XnMapOutputMode depth_md = mapConfigMode2XnMode ( config_.depth_mode);
+  depth_width_  = depth_md.nXRes;
+  depth_height_ = depth_md.nYRes;
 }
 
 void OpenNINodelet::imageCallback (const openni_wrapper::Image& image, void* cookie)
 {
   ros::Time time = ros::Time::now ();
+
+  // mode is switching -> probably image sizes are not consistend... skip this frame
+  //if (!image_mutex_.try_lock ())
+  //  return;
 
   if (pub_rgb_info_.getNumSubscribers () > 0)
     pub_rgb_info_.publish (fillCameraInfo (time, true));
@@ -204,11 +252,15 @@ void OpenNINodelet::imageCallback (const openni_wrapper::Image& image, void* coo
 
   if (pub_gray_image_.getNumSubscribers () > 0)
     publishGrayImage (image, time);
+
+  //image_mutex_.unlock ();
 }
 
 void OpenNINodelet::depthCallback (const openni_wrapper::DepthImage& depth_image, void* cookie)
 {
   ros::Time time = ros::Time::now ();
+  //if (!depth_mutex_.try_lock ())
+  //  return;
 
   // Camera info for depth image
   if (pub_depth_info_.getNumSubscribers () > 0)
@@ -225,6 +277,8 @@ void OpenNINodelet::depthCallback (const openni_wrapper::DepthImage& depth_image
   // Unregistered point cloud
   if (pub_point_cloud_.getNumSubscribers () > 0 )
     publishXYZPointCloud (depth_image, time);
+
+  //depth_mutex_.unlock ();
 }
 
 void OpenNINodelet::subscriberChangedEvent ()
@@ -233,13 +287,11 @@ void OpenNINodelet::subscriberChangedEvent ()
   if (isImageStreamRequired () && !device_->isImageStreamRunning ())
   {
     device_->startImageStream ();
-    updateSynchronization ();
+    startSynchronization ();
   }
   else if (!isImageStreamRequired () && device_->isImageStreamRunning ())
   {
-    if (device_->isSynchronized ())
-      device_->setSynchronization (false);
-
+    stopSynchronization ();
     device_->stopImageStream ();
     if (pub_rgb_info_.getNumSubscribers() > 0)
       ROS_WARN("Camera Info for rgb stream has subscribers, but stream has stopped.");
@@ -248,39 +300,40 @@ void OpenNINodelet::subscriberChangedEvent ()
   if (isDepthStreamRequired () && !device_->isDepthStreamRunning ())
   {
     device_->startDepthStream ();
-    updateSynchronization ();
+    startSynchronization ();
   }
   else if ( !isDepthStreamRequired () && device_->isDepthStreamRunning ())
   {
-    if (device_->isSynchronized ())
-      device_->setSynchronization (false);
-    
+    stopSynchronization ();
     device_->stopDepthStream ();
     if (pub_depth_info_.getNumSubscribers() > 0)
       ROS_WARN("Camera Info for depth stream has subscribers, but stream has stopped.");
   }
 
+  // if PointcloudXYZRGB is subscribed, we have to assure that depth stream is registered and
+  // image stream size is at least as big as the depth image size
   if (pub_point_cloud_rgb_.getNumSubscribers() > 0)
   {
+    Config config = config_;
+
     reconfigure_mutex_.lock ();
     if (!device_->isDepthRegistered ())
     {
       ROS_WARN ("turning on depth registration, since PointCloudXYZRGB has subscribers.");
       device_->setDepthRegistration (true);
-      config_.depth_registration = true;
-      reconfigure_server_->updateConfig (config_);
+      config.depth_registration = true;
     }
 
-    if (config_.depth_mode < config_.image_mode)
+    XnMapOutputMode depth_mode = mapConfigMode2XnMode (config_.depth_mode);
+    XnMapOutputMode image_mode = mapConfigMode2XnMode (config_.image_mode);
+    if (depth_mode.nXRes > image_mode.nXRes || depth_mode.nYRes > image_mode.nYRes)
     {
       ROS_WARN ("PointCloudXYZRGB need at least the same image size for mapping rgb values to the points");
-
-      Config config = config_;
       config.image_mode = config_.depth_mode;
-      reconfigure_server_->updateConfig (config);
-      configCallback (config, 0);
     }
 
+    reconfigure_server_->updateConfig (config);
+    configCallback (config, 0);
     reconfigure_mutex_.unlock ();
   }
 }
@@ -429,8 +482,12 @@ void OpenNINodelet::publishXYZRGBPointCloud (const sensor_msgs::ImageConstPtr& d
   // do not publish if rgb image is smaller than color image -> seg fault
   if (rgb_msg->height < depth_msg->height || rgb_msg->width < depth_msg->width)
   {
-    ROS_WARN("rgb image smaller than depth image... skipping point cloud for this frame rgb:%dx%d vs. depth:%3dx%d"
-            , rgb_msg->width, rgb_msg->height, depth_msg->width, depth_msg->height );
+    // we dont want to flood the terminal with warnings
+    static unsigned warned = 0;
+    if (warned % 100 == 0)
+      ROS_WARN("rgb image smaller than depth image... skipping point cloud for this frame rgb:%dx%d vs. depth:%3dx%d"
+              , rgb_msg->width, rgb_msg->height, depth_msg->width, depth_msg->height );
+    ++warned;
     return;
   }
   cloud_msg->points.resize (cloud_msg->height * cloud_msg->width);
@@ -515,130 +572,156 @@ sensor_msgs::CameraInfoPtr OpenNINodelet::fillCameraInfo (ros::Time time, bool i
 
 void OpenNINodelet::configCallback (Config &config, uint32_t level)
 {
-  // image mode changed?
-  if (config.image_mode != config_.image_mode)
+  XnMapOutputMode old_image_mode = device_->getImageOutputMode ();
+  XnMapOutputMode old_depth_mode = device_->getDepthOutputMode ();
+
+  // does the device support the new image mode?
+  XnMapOutputMode image_mode, compatible_image_mode;
+  image_mode = mapConfigMode2XnMode (config.image_mode);
+
+  if (!device_->findCompatibleImageMode (image_mode, compatible_image_mode))
   {
-    // does the device support the new image mode?
-    XnMapOutputMode image_mode, compatible_mode;
-    image_mode = mapConfigMode2XnMode (config.image_mode);
+    ROS_WARN ("Could not find any compatible image output mode for %d x %d @ %d.",
+            image_mode.nXRes, image_mode.nYRes, image_mode.nFPS);
 
-    if (!device_->findCompatibleImageMode (image_mode, compatible_mode))
-    {
-      ROS_WARN ("Could not find any compatible image output mode for %d x %d @ %d.",
-              image_mode.nXRes, image_mode.nYRes, image_mode.nFPS);
-
-      // dont change!
-      config.image_mode = config_.image_mode;
-      return;
-    }
-
-    // can we get RGB values from new image size for our pointcloud?
-    XnMapOutputMode depth_mode = mapConfigMode2XnMode (config.depth_mode);
-    
-    if ( (pub_point_cloud_rgb_.getNumSubscribers () > 0) && (
-         (depth_mode.nXRes > image_mode.nXRes) || (depth_mode.nYRes > image_mode.nYRes) ||
-         (image_mode.nXRes % depth_mode.nXRes != 0) ) )
-    {
-      // we dont care about YRes, since SXGA works fine for kinect with all depth resolutions
-      ROS_WARN ("image mode not compatible to depth mode, since PointCloudXYZRGB has subscribers.");
-      config.image_mode = config_.image_mode;
-      return;
-    }
-
-    if (device_->isSynchronized ())
-      device_->setSynchronization (false);
-
-    device_->setImageOutputMode (compatible_mode);
-    // but store original request to enable downscaling of images
-    image_height_ = image_mode.nYRes;
-    image_width_  = image_mode.nXRes;
-    
-    updateSynchronization ();
+    // dont change anything!
+    config = config_;
+    return;
   }
 
-  if (config.debayering != config_.debayering)
+  XnMapOutputMode depth_mode, compatible_depth_mode;
+  depth_mode = mapConfigMode2XnMode (config.depth_mode);
+  if (!device_->findCompatibleDepthMode (depth_mode, compatible_depth_mode))
   {
-    //ugly casting
-    DeviceKinect* kinect = dynamic_cast<DeviceKinect*> (device_.get ());
-    if (kinect)
-    {
-      switch (config.debayering)
-      {
-        case OpenNI_Bilinear:
-          kinect->setDebayeringMethod (ImageBayerGRBG::Bilinear);
-          break;
-        case OpenNI_EdgeAware:
-          kinect->setDebayeringMethod (ImageBayerGRBG::EdgeAware);
-          break;
-        case OpenNI_EdgeAwareWeighted:
-          kinect->setDebayeringMethod (ImageBayerGRBG::EdgeAwareWeighted);
-          break;
-        default:
-          ROS_ERROR ("unknwon debayering method");
-          config.debayering = config_.debayering;
-          break;
-      }
-    }
-    else
-      ROS_INFO ("%s does not provide bayer images. This setting does not affect the output images.", device_->getProductName ());
+    ROS_WARN ("Could not find any compatible depth output mode for %d x %d @ %d.",
+            depth_mode.nXRes, depth_mode.nYRes, depth_mode.nFPS);
+
+    // dont change anything!
+    config = config_;
+    return;
   }
 
-  if (config.depth_mode != config_.depth_mode)
+  DeviceKinect* kinect = dynamic_cast<DeviceKinect*> (device_.get ());
+  if (kinect)
   {
-    XnMapOutputMode depth_mode, compatible_mode;
-    depth_mode = mapConfigMode2XnMode (config.depth_mode);
-    if (!device_->findCompatibleDepthMode (depth_mode, compatible_mode))
+    switch (config.debayering)
     {
-      ROS_WARN ("Could not find any compatible depth output mode for %d x %d @ %d.",
-              depth_mode.nXRes, depth_mode.nYRes, depth_mode.nFPS);
-
-      // dont change!
-      config.depth_mode = config_.depth_mode;
-      return;
+      case OpenNI_Bilinear:
+        kinect->setDebayeringMethod (ImageBayerGRBG::Bilinear);
+        break;
+      case OpenNI_EdgeAware:
+        kinect->setDebayeringMethod (ImageBayerGRBG::EdgeAware);
+        break;
+      case OpenNI_EdgeAwareWeighted:
+        kinect->setDebayeringMethod (ImageBayerGRBG::EdgeAwareWeighted);
+        break;
+      default:
+        ROS_ERROR ("unknwon debayering method");
+        config.debayering = config_.debayering;
+        break;
     }
+  }
+  else if (config.debayering != config_.debayering) // this was selected explicitely
+  {
+    ROS_WARN ("%s does not output bayer images. Selection has no affect.", device_->getProductName () );
+  }
 
-    XnMapOutputMode image_mode = mapConfigMode2XnMode (config.image_mode);
-    if ( (pub_point_cloud_rgb_.getNumSubscribers () > 0) && (
-     (depth_mode.nXRes > image_mode.nXRes) || (depth_mode.nYRes > image_mode.nYRes) ||
-     (image_mode.nXRes % depth_mode.nXRes != 0) ) )
+  if (pub_point_cloud_rgb_.getNumSubscribers () > 0)
+  {
+    if ( (depth_mode.nXRes > image_mode.nXRes) || (depth_mode.nYRes > image_mode.nYRes) ||
+     (image_mode.nXRes % depth_mode.nXRes != 0) )
     {
       // we dont care about YRes, since SXGA works fine for kinect with all depth resolutions
       ROS_WARN ("depth mode not compatible to image mode, since PointCloudXYZRGB has subscribers.");
-      config.depth_mode = config_.depth_mode;
+      config = config_;
       return;
     }
-
-    if (device_->isSynchronized ())
-      device_->setSynchronization (false);
-
-    device_->setDepthOutputMode (compatible_mode);
-    depth_height_ = depth_mode.nYRes;
-    depth_width_  = depth_mode.nXRes;
-
-    updateSynchronization ();
-  }
-
-  if (config.depth_registration != config_.depth_registration)
-  {
-    if (!config.depth_registration && pub_point_cloud_rgb_.getNumSubscribers () > 0)
+    if (!config.depth_registration && config_.depth_registration)
     {
-      ROS_WARN ("can not trurn of registration, since PointCloudXYZRGB has subscribers.");
-      config.depth_registration = true;
+      ROS_WARN ("can not turn of registration, since PointCloudXYZRGB has subscribers.");
+      config = config_;
       return;
     }
-    else
-      device_->setDepthRegistration (config.depth_registration);
   }
-  
+
+  // here everything is fine. Now make the changes
+  if (compatible_image_mode != old_image_mode || compatible_depth_mode != old_depth_mode)
+  { // streams need to be reset!
+    stopSynchronization ();
+
+    if (compatible_image_mode != old_image_mode)
+    {
+     // image_mutex_.lock ();
+      device_->setImageOutputMode (compatible_image_mode);
+      image_width_  = image_mode.nXRes;
+      image_height_ = image_mode.nYRes;
+      //image_mutex_.unlock ();
+    }
+
+    if (compatible_depth_mode != old_depth_mode)
+    {
+      //depth_mutex_.lock ();
+      device_->setDepthOutputMode (compatible_depth_mode);
+      depth_width_  = depth_mode.nXRes;
+      depth_height_ = depth_mode.nYRes;
+      //depth_mutex_.unlock ();
+    }
+    startSynchronization ();
+  }
+  else
+  {
+    if (config_.image_mode != config.image_mode)
+    {
+      image_width_  = image_mode.nXRes;
+      image_height_ = image_mode.nYRes;
+    }
+
+    if (config_.depth_mode != config.depth_mode)
+    {
+      depth_width_  = depth_mode.nXRes;
+      depth_height_ = depth_mode.nYRes;
+    }
+  }
+
+  if (device_->isDepthRegistered () != config.depth_registration)
+  {
+    device_->setDepthRegistration (config.depth_registration);
+  }
+
+  // now we can copy
   config_ = config;
 }
 
-void OpenNINodelet::updateSynchronization ()
+bool OpenNINodelet::isImageModeSupported (int image_mode) const
+{
+  XnMapOutputMode image_md = mapConfigMode2XnMode (image_mode);
+  XnMapOutputMode compatible_mode;
+  if (device_->findCompatibleImageMode (image_md, compatible_mode))
+    return true;
+  return false;
+}
+
+bool OpenNINodelet::isDepthModeSupported (int depth_mode) const
+{
+  XnMapOutputMode depth_md = mapConfigMode2XnMode (depth_mode);
+  XnMapOutputMode compatible_mode;
+  if (device_->findCompatibleDepthMode (depth_md, compatible_mode))
+    return true;
+  return false;
+}
+
+void OpenNINodelet::startSynchronization ()
 {   
   if (device_->isSynchronizationSupported () && !device_->isSynchronized () &&
       device_->getImageOutputMode ().nFPS == device_->getDepthOutputMode ().nFPS &&
       device_->isImageStreamRunning () && device_->isDepthStreamRunning () )
     device_->setSynchronization (true);
+}
+
+void OpenNINodelet::stopSynchronization ()
+{
+  if (device_->isSynchronizationSupported () && device_->isSynchronized ())
+    device_->setSynchronization (false);
 }
 
 void OpenNINodelet::updateModeMaps ()

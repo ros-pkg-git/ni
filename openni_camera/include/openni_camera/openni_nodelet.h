@@ -53,9 +53,7 @@ namespace openni_camera
   class OpenNINodelet : public nodelet::Nodelet
   {
     public:
-      virtual ~OpenNINodelet ()
-      {
-      }
+      virtual ~OpenNINodelet ();
     private:
       typedef OpenNIConfig Config;
       typedef dynamic_reconfigure::Server<Config> ReconfigureServer;
@@ -64,9 +62,13 @@ namespace openni_camera
 
       /** \brief Nodelet initialization routine. */
       virtual void onInit ();
-      void setupDevice (ros::NodeHandle& comm_nh, ros::NodeHandle& param_nh);
+      void setupDevice (ros::NodeHandle& param_nh);
       void updateModeMaps ();
-      void updateSynchronization ();
+      void startSynchronization ();
+      void stopSynchronization ();
+      void setupDeviceModes (int image_mode, int depth_mode);
+      bool isImageModeSupported (int image_mode) const;
+      bool isDepthModeSupported (int depth_mode) const;
 
       void configCallback (Config &config, uint32_t level);
       int mapXnMode2ConfigMode (const XnMapOutputMode& output_mode) const;
@@ -107,6 +109,8 @@ namespace openni_camera
       boost::shared_ptr<ReconfigureServer> reconfigure_server_;
       Config config_;
       boost::recursive_mutex reconfigure_mutex_;
+      //boost::mutex depth_mutex_;
+      //boost::mutex image_mutex_;
 
       std::string rgb_frame_id_;
       std::string depth_frame_id_;

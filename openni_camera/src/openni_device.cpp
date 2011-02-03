@@ -78,6 +78,13 @@ OpenNIDevice::OpenNIDevice (xn::Context& context, const xn::NodeInfo& device_nod
 
 OpenNIDevice::~OpenNIDevice () throw ()
 {
+  // stop streams
+  if (image_generator_.IsGenerating ())
+    image_generator_.StopGenerating ();
+
+  if (depth_generator_.IsGenerating ())
+    depth_generator_.StopGenerating ();
+
   // lock before changing running flag
   depth_mutex_.lock ();
   image_mutex_.lock ();
@@ -90,13 +97,6 @@ OpenNIDevice::~OpenNIDevice () throw ()
 
   image_thread_.join ();
   depth_thread_.join ();
-
-  // stop streams
-  if (image_generator_.IsGenerating ())
-    image_generator_.StopGenerating ();
-
-  if (depth_generator_.IsGenerating ())
-    depth_generator_.StopGenerating ();
 }
 
 void OpenNIDevice::Init () throw (OpenNIException)
@@ -472,17 +472,25 @@ bool OpenNIDevice::findCompatibleImageMode (const XnMapOutputMode& output_mode, 
   }
   else
   {
+    bool found = false;
     for (vector<XnMapOutputMode>::const_iterator modeIt = available_image_modes_.begin (); modeIt != available_image_modes_.end (); ++modeIt)
     {
       if (modeIt->nFPS == output_mode.nFPS && isImageResizeSupported (modeIt->nXRes, modeIt->nYRes, output_mode.nXRes, output_mode.nYRes))
       {
-        mode = *modeIt;
-        return true;
+        if (found)
+        { // check wheter the new mode is better -> smaller than the current one.
+          if (mode.nXRes * mode.nYRes > modeIt->nXRes * modeIt->nYRes )
+            mode = *modeIt;
+        }
+        else
+        {
+          mode = *modeIt;
+          found = true;
+        }
       }
     }
+    return found;
   }
-
-  return false;
 }
 
 bool OpenNIDevice::findCompatibleDepthMode (const XnMapOutputMode& output_mode, XnMapOutputMode& mode) const throw (OpenNIException)
@@ -494,17 +502,25 @@ bool OpenNIDevice::findCompatibleDepthMode (const XnMapOutputMode& output_mode, 
   }
   else
   {
+    bool found = false;
     for (vector<XnMapOutputMode>::const_iterator modeIt = available_depth_modes_.begin (); modeIt != available_depth_modes_.end (); ++modeIt)
     {
       if (modeIt->nFPS == output_mode.nFPS && isImageResizeSupported (modeIt->nXRes, modeIt->nYRes, output_mode.nXRes, output_mode.nYRes))
       {
-        mode = *modeIt;
-        return true;
+        if (found)
+        { // check wheter the new mode is better -> smaller than the current one.
+          if (mode.nXRes * mode.nYRes > modeIt->nXRes * modeIt->nYRes )
+            mode = *modeIt;
+        }
+        else
+        {
+          mode = *modeIt;
+          found = true;
+        }
       }
     }
+    return found;
   }
-
-  return false;
 }
 
 void OpenNIDevice::getAvailableModes () throw (OpenNIException)
