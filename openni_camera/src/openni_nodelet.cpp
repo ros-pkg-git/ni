@@ -39,6 +39,8 @@
 #include <pluginlib/class_list_macros.h>
 #include "openni_camera/openni_nodelet.h"
 #include "openni_camera/openni_device_kinect.h"
+#include "openni_camera/openni_image.h"
+#include "openni_camera/openni_depth_image.h"
 #include <sensor_msgs/image_encodings.h>
 #include <pcl_ros/point_cloud.h>
 #include <pcl/point_types.h>
@@ -205,6 +207,20 @@ void OpenNINodelet::setupDevice (ros::NodeHandle& param_nh)
   }
   config_.debayering = debayering_method;
 
+  param_nh.param ("depth_time_offset", config_.depth_time_offset, 0.0 );
+  if(config_.depth_time_offset > 1.0 || config_.depth_time_offset < -1.0)
+  {
+    ROS_ERROR ("depth time offset is % 2.5f seconds. Thats unlikely... setting back to 0.0 seconds", config_.depth_time_offset);
+    config_.depth_time_offset = 0.0;
+  }
+
+  param_nh.param ("image_time_offset", config_.image_time_offset, 0.0 );
+  if(config_.image_time_offset > 1.0 || config_.image_time_offset < -1.0)
+  {
+    ROS_ERROR ("image time offset is % 2.5f seconds. Thats unlikely... setting back to 0.0 seconds", config_.image_time_offset);
+    config_.image_time_offset = 0.0;
+  }
+
   int image_mode = mapXnMode2ConfigMode (device_->getDefaultImageMode ());
   param_nh.param ("image_mode", image_mode, image_mode );
   if (image_mode < config_.__getMin__().image_mode  || image_mode > config_.__getMax__ ().image_mode ||
@@ -238,7 +254,7 @@ void OpenNINodelet::setupDevice (ros::NodeHandle& param_nh)
 
 void OpenNINodelet::imageCallback (const openni_wrapper::Image& image, void* cookie)
 {
-  ros::Time time = ros::Time::now ();
+  ros::Time time = ros::Time::now () + ros::Duration(config_.image_time_offset);
 
   // mode is switching -> probably image sizes are not consistend... skip this frame
   //if (!image_mutex_.try_lock ())
@@ -258,7 +274,7 @@ void OpenNINodelet::imageCallback (const openni_wrapper::Image& image, void* coo
 
 void OpenNINodelet::depthCallback (const openni_wrapper::DepthImage& depth_image, void* cookie)
 {
-  ros::Time time = ros::Time::now ();
+  ros::Time time = ros::Time::now () + ros::Duration(config_.depth_time_offset);
   //if (!depth_mutex_.try_lock ())
   //  return;
 

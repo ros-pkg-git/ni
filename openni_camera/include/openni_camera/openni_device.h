@@ -41,8 +41,6 @@
 #include <vector>
 #include <utility>
 #include <openni_camera/openni_exception.h>
-#include <openni_camera/openni_image.h>
-#include <openni_camera/openni_depth_image.h>
 #include <XnCppWrapper.h>
 #include <boost/noncopyable.hpp>
 #include <boost/function.hpp>
@@ -52,6 +50,8 @@
 
 namespace openni_wrapper
 {
+class Image;
+class DepthImage;
 /**
  * @brief Class representing an astract device for Primesense or MS Kinect devices.
  * @author Suat Gedikli
@@ -205,7 +205,7 @@ float OpenNIDevice::getImageFocalLength (int output_x_resolution) const throw ()
   if (output_x_resolution == 0)
     output_x_resolution = getImageOutputMode ().nXRes;
 
-  float scale = output_x_resolution / 1280.0f;
+  float scale = output_x_resolution / (float)XN_SXGA_X_RES;
   return rgb_focal_length_SXGA_ * scale;
 }
 
@@ -214,7 +214,7 @@ float OpenNIDevice::getDepthFocalLength (int output_x_resolution) const throw ()
   if (output_x_resolution == 0)
     output_x_resolution = getDepthOutputMode ().nXRes;
 
-  float scale = output_x_resolution / 1280.0f;
+  float scale = output_x_resolution / (float)XN_SXGA_X_RES;
   if (isDepthRegistered ())
     return rgb_focal_length_SXGA_ * scale;
   else
