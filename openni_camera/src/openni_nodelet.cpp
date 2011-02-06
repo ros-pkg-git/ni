@@ -155,41 +155,48 @@ void OpenNINodelet::setupDevice (ros::NodeHandle& param_nh)
   string device_id;
   param_nh.param ("device_id", device_id, std::string ());
 
-  if (device_id.empty ())
-  {
-    ROS_WARN ("[%s] device_id is not set! Using first device.", getName ().c_str ());
-    device_ = driver.getDeviceByIndex (0);
+  try {
+    if (device_id.empty ())
+    {
+      ROS_WARN ("[%s] device_id is not set! Using first device.", getName ().c_str ());
+      device_ = driver.getDeviceByIndex (0);
+    }
+    else if (device_id.find ('@') != string::npos)
+    {
+      size_t pos = device_id.find ('@');
+      unsigned bus = atoi (device_id.substr (0, pos).c_str ());
+      unsigned address = atoi (device_id.substr (pos + 1, device_id.length () - pos - 1).c_str ());
+      ROS_INFO ("[%s] searching for device with bus@address = %d@%d", getName ().c_str (), bus, address);
+      device_ = driver.getDeviceByAddress (bus, address);
+    }
+    else if (device_id[0] == '#')
+    {
+      unsigned index = atoi (device_id.c_str () + 1);
+      ROS_INFO ("[%s] searching for device with index = %d", getName ().c_str (), index);
+      device_ = driver.getDeviceByIndex (index - 1);
+    }
+    else
+    {
+      ROS_INFO ("[%s] searching for device with serial number = %s", getName ().c_str (), device_id.c_str ());
+      device_ = driver.getDeviceBySerialNumber (device_id);
+    }
   }
-  else if (device_id.find ('@') != string::npos)
+  catch (const OpenNIException& exception)
   {
-    size_t pos = device_id.find ('@');
-    unsigned bus = atoi (device_id.substr (0, pos).c_str ());
-    unsigned address = atoi (device_id.substr (pos + 1, device_id.length () - pos - 1).c_str ());
-    ROS_INFO ("[%s] searching for device with bus@address = %d@%d", getName ().c_str (), bus, address);
-    device_ = driver.getDeviceByAddress (bus, address);
-  }
-  else if (device_id[0] == '#')
-  {
-    unsigned index = atoi (device_id.c_str () + 1);
-    ROS_INFO ("[%s] searching for device with index = %d", getName ().c_str (), index);
-    device_ = driver.getDeviceByIndex (index - 1);
-  }
-  else
-  {
-    ROS_INFO ("[%s] searching for device with serial number = %s", getName ().c_str (), device_id.c_str ());
-    device_ = driver.getDeviceBySerialNumber (device_id);
+    if (!device_)
+    {
+      ROS_ERROR ("[%s] No matching device found.", getName ().c_str ());
+      exit (-1);
+    }
+    else
+    {
+      ROS_ERROR ("[%s] could not retrieve device. Reason %s", getName ().c_str (), exception.what ());
+      exit (-1);
+    }
   }
 
-  if (!device_)
-  {
-    ROS_ERROR ("[%s] No matching device found.", getName ().c_str ());
-    exit (-1);
-  }
-  else
-  {
-    ROS_INFO ("[%s] Opened '%s' on bus %d:%d with serial number '%s'", getName ().c_str (),
-              device_->getProductName (), device_->getBus (), device_->getAddress (), device_->getSerialNumber ());
-  }
+  ROS_INFO ("[%s] Opened '%s' on bus %d:%d with serial number '%s'", getName ().c_str (),
+            device_->getProductName (), device_->getBus (), device_->getAddress (), device_->getSerialNumber ());
 
   device_->registerImageCallback (&OpenNINodelet::imageCallback, *this);
   device_->registerDepthCallback (&OpenNINodelet::depthCallback, *this);
