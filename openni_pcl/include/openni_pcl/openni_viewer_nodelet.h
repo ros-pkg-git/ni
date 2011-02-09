@@ -40,7 +40,6 @@
 #include <boost/thread.hpp>
 #include <boost/thread/mutex.hpp>
 #include <ros/ros.h>
-#include <pcl_ros/subscriber.h>
 #include <pcl_visualization/pcl_visualizer.h>
 
 namespace openni_pcl
@@ -48,13 +47,21 @@ namespace openni_pcl
   ////////////////////////////////////////////////////////////////////////////////////////////
   class OpenNIViewerNodelet : public nodelet::Nodelet
   {
+    public:
+      OpenNIViewerNodelet ()
+      {
+        // Create the visualizer
+        viewer_.reset (new pcl_visualization::PCLVisualizer ("OpenNI Viewer"));
+        // Add a coordinate system to screen
+        viewer_->addCoordinateSystem (0.1);
+      }
+
     protected:
       /** \brief Nodelet initialization routine. */
       virtual void onInit ();
-  
-      /** \brief Spin. */
-      void spin (); 
 
+      /** \brief Visualization update loop. */
+      void updateVisualization ();
       /** \brief PointCloud2 message callback. */
       void cloud_cb (const sensor_msgs::PointCloud2ConstPtr& cloud);
 
@@ -62,13 +69,16 @@ namespace openni_pcl
       boost::shared_ptr<ros::NodeHandle> pnh_;
 
       /** \brief The input PointCloud2 subscriber. */
-      pcl_ros::Subscriber<sensor_msgs::PointCloud2> sub_;
+      ros::Subscriber sub_;
 
       /** \brief The PCLVisualizer object. */
       boost::shared_ptr<pcl_visualization::PCLVisualizer> viewer_;
 
       /** \brief Mutex. */
       boost::mutex mutex_;
+
+      /** \brief Point Cloud data. */
+      sensor_msgs::PointCloud2ConstPtr cloud_, cloud_old_;
     public:
       EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
   };
