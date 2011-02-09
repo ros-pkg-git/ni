@@ -40,7 +40,6 @@
 #include <boost/thread.hpp>
 #include <boost/thread/mutex.hpp>
 #include <ros/ros.h>
-#include <pcl_ros/subscriber.h>
 #include <pcl_visualization/pcl_visualizer.h>
 
 namespace openni_pcl
@@ -62,7 +61,7 @@ namespace openni_pcl
       boost::shared_ptr<ros::NodeHandle> pnh_;
 
       /** \brief The input PointCloud2 subscriber. */
-      pcl_ros::Subscriber<sensor_msgs::PointCloud2> sub_;
+      ros::Subscriber sub_;
 
       /** \brief The PCLVisualizer object. */
       boost::shared_ptr<pcl_visualization::PCLVisualizer> viewer_;
