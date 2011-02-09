@@ -42,7 +42,7 @@
 #define OPENNI_NODE_OPENNI_H_
 
 #include <boost/thread/mutex.hpp>
-#include <Eigen3/Core>
+#include <Eigen/Core>
 // ROS messages
 #include <sensor_msgs/PointCloud.h>
 #include <sensor_msgs/PointCloud2.h>
