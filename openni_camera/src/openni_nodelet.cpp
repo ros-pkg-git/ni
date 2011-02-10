@@ -87,7 +87,12 @@ OpenNINodelet::~OpenNINodelet ()
 
 void OpenNINodelet::onInit ()
 {
-  ros::NodeHandle comm_nh (getNodeHandle ().resolveName ("camera")); // for topics, services
+  ros::NodeHandle comm_nh;
+  if (getNodeHandle ().getNamespace ().empty ())
+    comm_nh = ros::NodeHandle(getNodeHandle ().resolveName ("camera")); // for topics, services
+  else
+    comm_nh = ros::NodeHandle(getNodeHandle ().getNamespace ()); // for topics, services
+  
   ros::NodeHandle param_nh = getPrivateNodeHandle (); // for parameters
 
   updateModeMaps ();      // registering mapping from config modes to XnModes and vice versa

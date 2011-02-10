@@ -225,7 +225,7 @@ void MyOpenNIExample::imageCallback (const Image& image, void* cookie)
   double now = timestamp.tv_sec + timestamp.tv_usec * 0.000001;
   double diff1 = min (fabs (now - depth_timestamp), fabs (depth_timestamp - image_timestamp));
   double diff2 = max (fabs (now - depth_timestamp), fabs (depth_timestamp - image_timestamp));
-  cout << diff1 * 1000.0 << "\tms vs. " << diff2 * 1000.0 << endl;
+  //cout << diff1 * 1000.0 << "\tms vs. " << diff2 * 1000.0 << endl;
 
   image_timestamp = now;
   OpenNIDevice* device = reinterpret_cast<OpenNIDevice*>(cookie);

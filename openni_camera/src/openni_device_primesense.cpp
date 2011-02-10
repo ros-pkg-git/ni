@@ -70,6 +70,9 @@ DevicePrimesense::DevicePrimesense (xn::Context& context, const xn::NodeInfo& de
 
 DevicePrimesense::~DevicePrimesense () throw ()
 {
+  setDepthRegistration ( false );
+  setSynchronization ( false );
+
   depth_mutex_.lock ();
   depth_generator_.UnregisterFromNewDataAvailable (depth_callback_handle_);
   depth_mutex_.unlock ();
@@ -194,10 +197,8 @@ Image* DevicePrimesense::getCurrentImage (const xn::ImageMetaData& image_data) c
   return new ImageYUV422 (image_data);
 }
 
-void 
-DevicePrimesense::startImageStream () throw (OpenNIException)
+void DevicePrimesense::startImageStream () throw (OpenNIException)
 {
-  // NOTE: make sure that depth_generator is created before
   if (isDepthStreamRunning () && isDepthRegistered ())  
   {
     // Reset the view point
@@ -212,6 +213,24 @@ DevicePrimesense::startImageStream () throw (OpenNIException)
   else
     // Start the stream
     OpenNIDevice::startImageStream ();
+}
+
+void DevicePrimesense::startDepthStream () throw (OpenNIException)
+{
+  if (isDepthRegistered ())
+  {
+    // Reset the view point
+    setDepthRegistration (false);
+
+    // Start the stream
+    OpenNIDevice::startDepthStream ();
+
+    // Register the stream
+    setDepthRegistration (true);
+  }
+  else
+    // Start the stream
+    OpenNIDevice::startDepthStream ();
 }
 
 } //namespace
