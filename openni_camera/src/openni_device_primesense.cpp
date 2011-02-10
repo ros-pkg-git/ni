@@ -193,4 +193,25 @@ Image* DevicePrimesense::getCurrentImage (const xn::ImageMetaData& image_data) c
 {
   return new ImageYUV422 (image_data);
 }
+
+void 
+DevicePrimesense::startImageStream () throw (OpenNIException)
+{
+  // NOTE: make sure that depth_generator is created before
+  if (isDepthStreamRunning () && isDepthRegistered ())  
+  {
+    // Reset the view point
+    setDepthRegistration (false);
+
+    // Start the stream
+    OpenNIDevice::startImageStream ();
+
+    // Register the stream
+    setDepthRegistration (true);
+  }
+  else
+    // Start the stream
+    OpenNIDevice::startImageStream ();
+}
+
 } //namespace

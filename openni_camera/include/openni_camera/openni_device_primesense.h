@@ -61,6 +61,9 @@ protected:
   virtual Image* getCurrentImage (const xn::ImageMetaData& image_meta_data) const throw ();
   virtual void getAvailableModes () throw (OpenNIException);
   virtual bool isImageResizeSupported (unsigned input_width, unsigned input_height, unsigned output_width, unsigned output_height) const throw ();
+
+  virtual void startImageStream () throw (OpenNIException);
+
 };
 } // namespace
 
