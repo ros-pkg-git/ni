@@ -153,25 +153,8 @@ bool OpenNIDriver::spin ()
         ROS_ERROR ("[OpenNIDriver::spin] Error in starting depth stream (): %s", xnGetStatusString (status));
         return (false);
       }
-
-      if (config_.point_cloud_type != OpenNI_XYZ_unregistered)
-      {
-        status = depth_generator_.GetAlternativeViewPointCap().SetViewPoint( image_generator_ );
-        if (status != XN_STATUS_OK)
-        {
-          ROS_ERROR ("[OpenNIDriver::spin] Error in switching on depth stream registration: %s", xnGetStatusString (status));
-          return (false);
-        }
-      }
-      else
-      {
-        status = depth_generator_.GetAlternativeViewPointCap().ResetViewPoint();
-        if (status != XN_STATUS_OK)
-        {
-          ROS_ERROR ("[OpenNIDriver::spin] Error in switching off depth stream registration: %s", xnGetStatusString (status));
-          return (false);
-        }
-      }
+      // Need to update the settings everytime the stream is started
+      updateDeviceSettings ();
     }
 
     if (!isImageStreamRequired() && image_generator_.IsGenerating())
@@ -191,6 +174,8 @@ bool OpenNIDriver::spin ()
         ROS_ERROR ("[OpenNIDriver::spin] Error in starting image stream (): %s", xnGetStatusString (status));
         return (false);
       }
+      // Need to update the settings everytime the stream is started
+      updateDeviceSettings ();
     }
 
     if (!isImageStreamRequired() && !isDepthStreamRequired())
@@ -213,7 +198,6 @@ bool OpenNIDriver::spin ()
     }
 
     r.sleep(); /// @todo should only happen if no new data
-
   }
   return (true);
 }
