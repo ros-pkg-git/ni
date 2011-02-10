@@ -136,25 +136,6 @@ bool OpenNIDriver::spin ()
     // Spin for ROS message processing
     ros::spinOnce (); // At top to allow use of continue below. 
     
-    if (!isImageStreamRequired() && image_generator_.IsGenerating())
-    {
-      status = image_generator_.StopGenerating();
-      if (status != XN_STATUS_OK)
-      {
-        ROS_ERROR ("[OpenNIDriver::spin] Error in stopping image stream (): %s", xnGetStatusString (status));
-        return (false);
-      }
-    }
-    else if (isImageStreamRequired() && !image_generator_.IsGenerating())
-    {
-      status = image_generator_.StartGenerating();
-      if (status != XN_STATUS_OK)
-      {
-        ROS_ERROR ("[OpenNIDriver::spin] Error in starting image stream (): %s", xnGetStatusString (status));
-        return (false);
-      }
-    }
-
     if (!isDepthStreamRequired() && depth_generator_.IsGenerating())
     {
       status = depth_generator_.StopGenerating();
@@ -190,6 +171,25 @@ bool OpenNIDriver::spin ()
           ROS_ERROR ("[OpenNIDriver::spin] Error in switching off depth stream registration: %s", xnGetStatusString (status));
           return (false);
         }
+      }
+    }
+
+    if (!isImageStreamRequired() && image_generator_.IsGenerating())
+    {
+      status = image_generator_.StopGenerating();
+      if (status != XN_STATUS_OK)
+      {
+        ROS_ERROR ("[OpenNIDriver::spin] Error in stopping image stream (): %s", xnGetStatusString (status));
+        return (false);
+      }
+    }
+    else if (isImageStreamRequired() && !image_generator_.IsGenerating())
+    {
+      status = image_generator_.StartGenerating();
+      if (status != XN_STATUS_OK)
+      {
+        ROS_ERROR ("[OpenNIDriver::spin] Error in starting image stream (): %s", xnGetStatusString (status));
+        return (false);
       }
     }
 
@@ -803,6 +803,8 @@ bool OpenNIDriver::updateDeviceSettings()
   rgb_info_.P[10]   = 1.0;
   rgb_info_.width   = image_width;
   rgb_info_.height  = image_height;
+
+  depth_generator_.GetAlternativeViewPointCap ().ResetViewPoint ();
 
   if (!image_generator_.IsValid())
   {
