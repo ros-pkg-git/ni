@@ -1,0 +1,10 @@
+<launch>
+  <node pkg="nodelet" type="nodelet" name="openni_manager" args="manager" output="screen" launch-prefix="gdbrun" />
+  <node pkg="nodelet" type="nodelet" name="openni_driver" args="load openni_camera/OpenNIDriver openni_manager">
+    <!--remap from="camera" to="openni" /-->
+    <param name="registration_type" value="1" />
+    <param name="image_input_format" value="5" />
+    <param name="device_type" value="0" />
+    <rosparam command="load" file="$(find openni_camera)/info/openni_params.yaml" />
+  </node>
+</launch>
