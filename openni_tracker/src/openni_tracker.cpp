@@ -111,7 +111,9 @@ void publishTransform(XnUserID const& user, XnSkeletonJoint const& joint, string
     tf::Transform transform;
     transform.setOrigin(tf::Vector3(x, y, z));
     transform.setRotation(tf::Quaternion(qx, qy, qz, qw));
-    br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), frame_id, child_frame_id));
+		std::ostringstream ncf;
+		ncf << (int) user << "_" << child_frame_id;
+    br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), frame_id, ncf.str()));
 }
 
 void publishTransforms() {
