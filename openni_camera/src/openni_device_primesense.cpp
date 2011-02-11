@@ -199,16 +199,38 @@ Image* DevicePrimesense::getCurrentImage (const xn::ImageMetaData& image_data) c
 
 void DevicePrimesense::startImageStream () throw (OpenNIException)
 {
-  if (isDepthStreamRunning () && isDepthRegistered ())  
+  // Suat: Ugly workaround... but on some usb-ports its not possible to start the image stream after the depth stream.
+  // turning on and off registration solves for some reason the problem!
+
+  if (isDepthStreamRunning ())
   {
-    // Reset the view point
-    setDepthRegistration (false);
+    if (isDepthRegistered ())
+    {
+     // Reset the view point
+      setDepthRegistration (false);
 
-    // Start the stream
-    OpenNIDevice::startImageStream ();
+      // Reset the view point
+      setDepthRegistration (true);
 
-    // Register the stream
-    setDepthRegistration (true);
+     // Reset the view point
+      setDepthRegistration (false);
+
+      // Start the stream
+      OpenNIDevice::startImageStream ();
+
+      // Register the stream
+      setDepthRegistration (true);
+    }
+    else
+    {
+      // Reset the view point
+      setDepthRegistration (true);
+      // Reset the view point
+      setDepthRegistration (false);
+
+      // Start the stream
+      OpenNIDevice::startImageStream ();
+    }
   }
   else
     // Start the stream

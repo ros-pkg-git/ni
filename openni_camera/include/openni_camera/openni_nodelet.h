@@ -48,6 +48,7 @@
 #include <string>
 #include <message_filters/synchronizer.h>
 #include <message_filters/sync_policies/approximate_time.h>
+#include <Eigen/Core>
 
 namespace openni_camera
 {
@@ -141,6 +142,8 @@ namespace openni_camera
       };
       std::map<XnMapOutputMode, int, modeComp> xn2config_map_;
       std::map<int, XnMapOutputMode> config2xn_map_;
+  public:
+      EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
   };
 
   bool OpenNINodelet::isImageStreamRequired() const
