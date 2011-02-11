@@ -87,12 +87,7 @@ OpenNINodelet::~OpenNINodelet ()
 
 void OpenNINodelet::onInit ()
 {
-  ros::NodeHandle comm_nh;
-  if (getNodeHandle ().getNamespace ().empty ())
-    comm_nh = ros::NodeHandle(getNodeHandle ().resolveName ("camera")); // for topics, services
-  else
-    comm_nh = ros::NodeHandle(getNodeHandle ().getNamespace ()); // for topics, services
-  
+  ros::NodeHandle comm_nh(getNodeHandle ().resolveName ("camera")); // for topics, services
   ros::NodeHandle param_nh = getPrivateNodeHandle (); // for parameters
 
   updateModeMaps ();      // registering mapping from config modes to XnModes and vice versa
@@ -102,15 +97,19 @@ void OpenNINodelet::onInit ()
   if (rgb_frame_id_.empty ())
   {
     rgb_frame_id_ = "/openni_rgb_optical_frame";
-    ROS_INFO ("\'rgb_frame_id_\' not set. using default: \'%s\'", rgb_frame_id_.c_str());
+    ROS_INFO ("'rgb_frame_id' not set. using default: '%s'", rgb_frame_id_.c_str());
   }
+  else
+    ROS_INFO ("rgb_frame_id = '%s' ", rgb_frame_id_.c_str());
 
   param_nh.param ("depth_frame_id", depth_frame_id_, string (""));
   if (depth_frame_id_.empty ())
   {
     depth_frame_id_ = "/openni_depth_optical_frame";
-    ROS_INFO ("\'depth_frame_id_\' not set. using default: \'%s\'", depth_frame_id_.c_str());
+    ROS_INFO ("'depth_frame_id' not set. using default: '%s'", depth_frame_id_.c_str());
   }
+  else
+    ROS_INFO ("depth_frame_id = '%s' ", depth_frame_id_.c_str());
 
   image_transport::ImageTransport imageTransport (comm_nh);
   image_transport::SubscriberStatusCallback subscriberChanged = boost::bind(&OpenNINodelet::subscriberChangedEvent, this);
@@ -123,7 +122,7 @@ void OpenNINodelet::onInit ()
   pub_rgb_info_ = comm_nh.advertise<sensor_msgs::CameraInfo > ("rgb/camera_info", 5, subscriberChanged2, subscriberChanged2);
   pub_depth_info_ = comm_nh.advertise<sensor_msgs::CameraInfo > ("depth/camera_info", 5, subscriberChanged2, subscriberChanged2);
   pub_point_cloud_ = comm_nh.advertise<pcl::PointCloud<pcl::PointXYZ> > ("depth/points", 5, subscriberChanged2, subscriberChanged2);
-  pub_point_cloud_rgb_ = comm_nh.advertise<pcl::PointCloud<pcl::PointXYZRGB> > ("depth/points_rgb", 5, subscriberChanged2, subscriberChanged2);
+  pub_point_cloud_rgb_ = comm_nh.advertise<pcl::PointCloud<pcl::PointXYZRGB> > ("rgb/points", 5, subscriberChanged2, subscriberChanged2);
 
   SyncPolicy sync_policy (4); // queue size
   depth_rgb_sync_.reset (new Synchronizer (sync_policy));
