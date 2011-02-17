@@ -319,7 +319,7 @@ void OpenNIDriver::publishDepthImage ( const xn::DepthMetaData& depth_md, ros::T
   msg_ptr->width  = disp_image_.image.width;
   msg_ptr->encoding = sensor_msgs::image_encodings::TYPE_32FC1;
   msg_ptr->step = msg_ptr->width * sizeof(float);
-  msg_ptr->data.resize(msg_ptr->width * msg_ptr->step);
+  msg_ptr->data.resize(msg_ptr->height * msg_ptr->step);
   
   unsigned xStep = depth_stream_width / msg_ptr->width;
   unsigned ySkip = (depth_stream_height / msg_ptr->height - 1) * depth_stream_width;
