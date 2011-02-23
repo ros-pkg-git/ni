@@ -206,7 +206,7 @@ void OpenNINodelet::setupDevice (ros::NodeHandle& param_nh)
   device_->registerDepthCallback (&OpenNINodelet::depthCallback, *this);
 
   bool registration = false;
-  param_nh.param ("registration", registration, false );
+  param_nh.param ("depth_registration", registration, false );
   config_.depth_registration = registration;
 
   int debayering_method = 0;
@@ -447,7 +447,7 @@ void OpenNINodelet::publishXYZPointCloud (const DepthImage& depth, ros::Time tim
 {
   const xn::DepthMetaData& depth_md = depth.getDepthMetaData ();
 
-  boost::shared_ptr<pcl::PointCloud<pcl::PointXYZ> > cloud_msg = boost::make_shared<pcl::PointCloud<pcl::PointXYZ> > ();
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_msg (new pcl::PointCloud<pcl::PointXYZ>() );
   cloud_msg->header.stamp = time;
   cloud_msg->height       = depth_height_;
   cloud_msg->width        = depth_width_;
@@ -499,7 +499,7 @@ void OpenNINodelet::publishXYZPointCloud (const DepthImage& depth, ros::Time tim
 
 void OpenNINodelet::publishXYZRGBPointCloud (const sensor_msgs::ImageConstPtr& depth_msg, const sensor_msgs::ImageConstPtr& rgb_msg) const
 {
-  boost::shared_ptr<pcl::PointCloud<pcl::PointXYZRGB> > cloud_msg = boost::make_shared<pcl::PointCloud<pcl::PointXYZRGB> > ();
+  pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_msg (new pcl::PointCloud<pcl::PointXYZRGB>() );
   cloud_msg->header.stamp     = depth_msg->header.stamp;
   cloud_msg->header.frame_id  = rgb_frame_id_;
   cloud_msg->height           = depth_msg->height;
