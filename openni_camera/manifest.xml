@@ -3,9 +3,13 @@
 
     A general purpose ROS driver for all OpenNI cameras. The driver publishes:
     <ul>
-      <li> RGB image data</li>
-      <li> depth data as PointCloud2</li>
-      <li> ... </li>
+    	<li>/camera/depth/camera_info : Camera parameters for the IR (depth) camera </li>
+    	<li>/camera/depth/image : single channel floating point (float32) depth image, containing the depth in meters.</li>
+    	<li>/camera/depth/points : point cloud without color information</li>
+    	<li>/camera/rgb/camera_info : Camera parameters for the RGB camera </li>
+    	<li>/camera/rgb/image_color : RGB image </li>
+    	<li>/camera/rgb/image_mono : Grayscale image </li>
+    	<li>/camera/rgb/points : point cloud containing RGB value for each point </li>
     </ul>
     
     There are two versions of the driver: a standard ROS node, and a nodelet. 
