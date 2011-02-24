@@ -36,6 +36,8 @@
   <depend package="pcl_ros" />
   <depend package="opencv2" />
   <depend package="eigen" />
+
+  <rosdep name="libusb" />
   <export>
     <cpp cflags="-I${prefix}/include" lflags="-Wl,-rpath,${prefix}/lib -L${prefix}/lib -lopenni_driver -lopenni_nodelet" />
     <nodelet plugin="${prefix}/openni_nodelets.xml" />
