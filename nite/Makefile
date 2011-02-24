@@ -3,18 +3,21 @@ all: nite
 ARCH = $(shell uname -m)
 ifeq ($(ARCH), i686)
 ARCH_DIR = x86
+TARBALL_URL = http://www.openni.org/downloadfiles/openni-compliant-middleware-binaries/stable/54-primesense-nite-beta-build-for-for-ubuntu-10-10-x86-32-bit-v1-3-0/download
 else ifeq ($(ARCH), i486)
 ARCH_DIR = x86
+TARBALL_URL = http://www.openni.org/downloadfiles/openni-compliant-middleware-binaries/stable/54-primesense-nite-beta-build-for-for-ubuntu-10-10-x86-32-bit-v1-3-0/download
 else ifeq ($(ARCH), i386)
 ARCH_DIR = x86
+TARBALL_URL = http://www.openni.org/downloadfiles/openni-compliant-middleware-binaries/stable/54-primesense-nite-beta-build-for-for-ubuntu-10-10-x86-32-bit-v1-3-0/download
 else ifeq ($(ARCH), x86_64)
 ARCH_DIR = x64
+TARBALL_URL = http://www.openni.org/downloadfiles/openni-compliant-middleware-binaries/stable/53-primesense-nite-beta-build-for-for-ubuntu-10-10-x64-64-bit-v1-3-0/download
 endif
 BIN_DIR = $(SOURCE_DIR)/bin-pc/$(ARCH_DIR)
 
-
-TARBALL     = build/NITE-Bin-Ubuntu-$(ARCH_DIR)-1.3.0.17.tar.bz2
-TARBALL_URL = http://downloads.primesense.com/NITE-Bin-Ubuntu-$(ARCH_DIR)-1.3.0.17.tar.bz2
+TARBALL     = build/NITE-Bin-Ubuntu.tar.bz2
+#TARBALL_URL = http://downloads.primesense.com/NITE-Bin-Ubuntu-$(ARCH_DIR)-1.3.0.17.tar.bz2
 UNPACK_CMD  = tar xfj
 SOURCE_DIR  = build/Nite-1.3.0.17
 TARBALL_PATCH = 
