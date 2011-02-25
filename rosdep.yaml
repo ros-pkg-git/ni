@@ -1,4 +1,4 @@
-libusb:
+libusb1.0:
   ubuntu: libusb-1.0-0-dev
 git:
   ubuntu: git-core
