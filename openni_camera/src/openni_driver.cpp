@@ -42,7 +42,7 @@
 #include <algorithm>
 #include <locale>
 #include <cctype>
-#include <usb.h>
+#include <libusb-1.0/libusb.h>
 #include <map>
 
 using namespace std;
@@ -71,7 +71,7 @@ OpenNIDriver::OpenNIDriver () throw (OpenNIException)
     THROW_OPENNI_EXCEPTION ("enumerating devices failed. Reason: %s", xnGetStatusString (status));
   else if (node_info_list.Begin () == node_info_list.End ())
     return; // no exception
-    //THROW_OPENNI_EXCEPTION ("no compatible device found");
+  //THROW_OPENNI_EXCEPTION ("no compatible device found");
 
   vector<xn::NodeInfo> device_info;
   for (xn::NodeInfoList::Iterator nodeIt = node_info_list.Begin (); nodeIt != node_info_list.End (); ++nodeIt)
@@ -112,7 +112,7 @@ OpenNIDriver::OpenNIDriver () throw (OpenNIException)
   for (unsigned deviceIdx = 0; deviceIdx < device_info.size (); ++deviceIdx)
   {
     // add context object for device
-    device_context_.push_back (DeviceContext(device_info[deviceIdx], image_info[deviceIdx], depth_info[deviceIdx]));
+    device_context_.push_back (DeviceContext (device_info[deviceIdx], image_info[deviceIdx], depth_info[deviceIdx]));
 
     // register bus@address to the corresponding context object
     unsigned short vendor_id;
@@ -130,7 +130,7 @@ OpenNIDriver::OpenNIDriver () throw (OpenNIException)
   for (unsigned deviceIdx = 0; deviceIdx < device_info.size (); ++deviceIdx)
   {
     string serial_number = getSerialNumber (deviceIdx);
-    if (!serial_number.empty () )
+    if (!serial_number.empty ())
       serial_map_[serial_number] = deviceIdx;
   }
 }
@@ -150,7 +150,8 @@ OpenNIDriver::~OpenNIDriver () throw ()
     stopAll ();
   }
   catch (...)
-  {}
+  {
+  }
 
   context_.Shutdown ();
 }
@@ -158,29 +159,29 @@ OpenNIDriver::~OpenNIDriver () throw ()
 shared_ptr<OpenNIDevice> OpenNIDriver::getDeviceByIndex (unsigned index) const throw (OpenNIException)
 {
   if (index > device_context_.size ())
-    THROW_OPENNI_EXCEPTION ("device index out of range. only %d devices connected but device %d requested.", device_context_.size (), index );
+    THROW_OPENNI_EXCEPTION ("device index out of range. only %d devices connected but device %d requested.", device_context_.size (), index);
 
   shared_ptr<OpenNIDevice> device = device_context_[index].device.lock ();
   if (!device)
   {
     string connection_string = device_context_[index].device_node.GetCreationInfo ();
     transform (connection_string.begin (), connection_string.end (), connection_string.begin (), std::towlower);
-    if (connection_string.substr (0,4) == "045e")
+    if (connection_string.substr (0, 4) == "045e")
     {
       device = boost::shared_ptr<OpenNIDevice > (new DeviceKinect (context_, device_context_[index].device_node,
-                                                 device_context_[index].image_node, device_context_[index].depth_node));
+                                                                   device_context_[index].image_node, device_context_[index].depth_node));
       device_context_[index].device = device;
     }
-    else if (connection_string.substr (0,4) == "1d27")
+    else if (connection_string.substr (0, 4) == "1d27")
     {
       device = boost::shared_ptr<OpenNIDevice > (new DevicePrimesense (context_, device_context_[index].device_node,
-                                                 device_context_[index].image_node, device_context_[index].depth_node));
+                                                                       device_context_[index].image_node, device_context_[index].depth_node));
       device_context_[index].device = device;
     }
     else
     {
       THROW_OPENNI_EXCEPTION ("vendor %s (%s) known by primesense driver, but not by ros driver. Contact maintainer of the ros driver.",
-                              getVendorName (index), connection_string.substr (0,4).c_str ());
+                              getVendorName (index), connection_string.substr (0, 4).c_str ());
     }
   }
   return device;
@@ -194,11 +195,11 @@ shared_ptr<OpenNIDevice> OpenNIDriver::getDeviceBySerialNumber (const string& se
   {
     return getDeviceByIndex (it->second);
   }
-  
+
   THROW_OPENNI_EXCEPTION ("No device with serial number \'%s\' found", serial_number.c_str ());
 
   // because of warnings!!!
-  return shared_ptr<OpenNIDevice>( (OpenNIDevice*) NULL);
+  return shared_ptr<OpenNIDevice > ((OpenNIDevice*)NULL);
 }
 
 shared_ptr<OpenNIDevice> OpenNIDriver::getDeviceByAddress (unsigned char bus, unsigned char address) const throw (OpenNIException)
@@ -213,89 +214,83 @@ shared_ptr<OpenNIDevice> OpenNIDriver::getDeviceByAddress (unsigned char bus, un
     }
   }
 
-  THROW_OPENNI_EXCEPTION ("No device on bus: %d @ %d found", (int)bus, (int)address );
+  THROW_OPENNI_EXCEPTION ("No device on bus: %d @ %d found", (int)bus, (int)address);
 
   // because of warnings!!!
-  return shared_ptr<OpenNIDevice>( (OpenNIDevice*) NULL);
+  return shared_ptr<OpenNIDevice > ((OpenNIDevice*)NULL);
 }
 
 void OpenNIDriver::getDeviceInfos () throw ()
 {
-  struct usb_bus *bus;
-  struct usb_device *dev;
+  libusb_context *context = NULL;
+  int result;
+  result = libusb_init (&context); //initialize a library session
 
-  /* Initialize libusb */
-  usb_init ();
+  if (result < 0)
+    return;
 
-  /* Find all USB busses on system */
-  usb_find_busses ();
+  libusb_device **devices;
+  int count = libusb_get_device_list (context, &devices);
+  if (count < 0)
+    return;
 
-  /* Find all devices on all USB devices */
-  usb_find_devices ();
-
-  for (bus = usb_busses; bus; bus = bus->next)
+  for (int devIdx = 0; devIdx < count; ++devIdx)
   {
-    unsigned char busId = atoi (bus->dirname);
+    libusb_device* device = devices[devIdx];
+    uint8_t busId = libusb_get_bus_number (device);
     map<unsigned char, map<unsigned char, unsigned> >::const_iterator busIt = bus_map_.find (busId);
     if (busIt == bus_map_.end ())
       continue;
 
-    for (dev = bus->devices; dev; dev = dev->next)
+    uint8_t address = libusb_get_device_address (device);
+    map<unsigned char, unsigned>::const_iterator addressIt = busIt->second.find (address);
+    if (addressIt == busIt->second.end ())
+      continue;
+
+    unsigned nodeIdx = addressIt->second;
+    xn::NodeInfo& current_node = device_context_[nodeIdx].device_node;
+    XnProductionNodeDescription& description = const_cast<XnProductionNodeDescription&>(current_node.GetDescription ());
+
+    libusb_device_descriptor descriptor;
+    result = libusb_get_device_descriptor (devices[devIdx], &descriptor);
+
+    if (result < 0)
     {
-      unsigned char devId = atoi (dev->filename);
-      map<unsigned char, unsigned>::const_iterator addressIt = busIt->second.find (devId);
-      if (addressIt == busIt->second.end ())
-        continue;
-
-      unsigned nodeIdx = addressIt->second;
-      xn::NodeInfo& current_node = device_context_[nodeIdx].device_node;
-      XnProductionNodeDescription& description = const_cast<XnProductionNodeDescription&> (current_node.GetDescription());
-
-      int ret;
-      char buffer[256];
-      usb_dev_handle *udev;
-
-      /* Opens a USB device */
-      udev = usb_open (dev);
-      if (udev)
+      strcpy (description.strVendor, "unknown");
+      strcpy (description.strName, "unknown");
+      current_node.SetInstanceName ("");
+    }
+    else
+    {
+      libusb_device_handle* dev_handle;
+      result = libusb_open (device, &dev_handle);
+      if (result < 0)
       {
-        if (dev->descriptor.iManufacturer)
-        {
-          // Retrieves a string descriptor from a device using the first language
-          ret = usb_get_string_simple(udev, dev->descriptor.iManufacturer, buffer, sizeof (buffer));
-          if (ret > 0)
-            strcpy( description.strVendor, buffer );
-          else
-            strcpy( description.strVendor, "unknown" );
-        }
+        strcpy (description.strVendor, "unknown");
+        strcpy (description.strName, "unknown");
+        current_node.SetInstanceName ("");
+      }
+      else
+      {
+        unsigned char buffer[1024];
+        libusb_get_string_descriptor_ascii (dev_handle, descriptor.iManufacturer, buffer, 1024);
+        strcpy (description.strVendor, (char*)buffer);
 
-        if (dev->descriptor.iProduct)
-        {
-          ret = usb_get_string_simple(udev, dev->descriptor.iProduct, buffer, sizeof (buffer));
-          if (ret > 0)
-            strcpy( description.strName, buffer );
-          else
-            strcpy( description.strName, "unknown" );
-        }
+        libusb_get_string_descriptor_ascii (dev_handle, descriptor.iProduct, buffer, 1024);
+        strcpy (description.strName, (char*)buffer);
 
-        if (dev->descriptor.iSerialNumber)
-        {
-          ret = usb_get_string_simple (udev, dev->descriptor.iSerialNumber, buffer, sizeof (buffer));
-          if (ret > 0)
-          {
-            current_node.SetInstanceName (buffer);
-          }
-          else
-            current_node.SetInstanceName ("");
-        }
+        int len = libusb_get_string_descriptor_ascii (dev_handle, descriptor.iSerialNumber, buffer, 1024);
+        if (len > 4)
+          current_node.SetInstanceName ((char*)buffer);
         else
           current_node.SetInstanceName ("");
 
-        /* Closes a USB device */
-        usb_close (udev);
+        libusb_close (dev_handle);
       }
     }
   }
+  libusb_free_device_list (devices, 1);
+  libusb_exit (context);
 }
 
 const char* OpenNIDriver::getSerialNumber (unsigned index) const throw ()
@@ -340,7 +335,7 @@ unsigned short OpenNIDriver::getProductID (unsigned index) const throw ()
   return product_id;
 }
 
-unsigned char  OpenNIDriver::getBus (unsigned index) const throw ()
+unsigned char OpenNIDriver::getBus (unsigned index) const throw ()
 {
   unsigned short vendor_id;
   unsigned short product_id;
@@ -351,7 +346,7 @@ unsigned char  OpenNIDriver::getBus (unsigned index) const throw ()
   return bus;
 }
 
-unsigned char  OpenNIDriver::getAddress (unsigned index) const throw ()
+unsigned char OpenNIDriver::getAddress (unsigned index) const throw ()
 {
   unsigned short vendor_id;
   unsigned short product_id;
