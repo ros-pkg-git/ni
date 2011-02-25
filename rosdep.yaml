@@ -1,7 +1,5 @@
 libusb1.0:
   ubuntu: libusb-1.0-0-dev
-libusb0.1:
-  ubuntu: libusb-dev
 git:
   ubuntu: git-core
   debian: git-core
