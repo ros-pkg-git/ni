@@ -97,19 +97,19 @@ void OpenNINodelet::onInit ()
   if (rgb_frame_id_.empty ())
   {
     rgb_frame_id_ = "/openni_rgb_optical_frame";
-    ROS_INFO ("'rgb_frame_id' not set. using default: '%s'", rgb_frame_id_.c_str());
+    NODELET_INFO ("'rgb_frame_id' not set. using default: '%s'", rgb_frame_id_.c_str());
   }
   else
-    ROS_INFO ("rgb_frame_id = '%s' ", rgb_frame_id_.c_str());
+    NODELET_INFO ("rgb_frame_id = '%s' ", rgb_frame_id_.c_str());
 
   param_nh.param ("depth_frame_id", depth_frame_id_, string (""));
   if (depth_frame_id_.empty ())
   {
     depth_frame_id_ = "/openni_depth_optical_frame";
-    ROS_INFO ("'depth_frame_id' not set. using default: '%s'", depth_frame_id_.c_str());
+    NODELET_INFO ("'depth_frame_id' not set. using default: '%s'", depth_frame_id_.c_str());
   }
   else
-    ROS_INFO ("depth_frame_id = '%s' ", depth_frame_id_.c_str());
+    NODELET_INFO ("depth_frame_id = '%s' ", depth_frame_id_.c_str());
 
   image_transport::ImageTransport imageTransport (comm_nh);
   image_transport::SubscriberStatusCallback subscriberChanged = boost::bind(&OpenNINodelet::subscriberChangedEvent, this);
@@ -143,14 +143,14 @@ void OpenNINodelet::setupDevice (ros::NodeHandle& param_nh)
 
   if (driver.getNumberDevices () == 0)
   {
-    ROS_ERROR ("[%s] No devices connected.", getName ().c_str ());
+    NODELET_ERROR ("[%s] No devices connected.", getName ().c_str ());
     exit (-1);
   }
 
-  ROS_INFO ("[%s] Number devices connected: %d", getName ().c_str (), driver.getNumberDevices ());
+  NODELET_INFO ("[%s] Number devices connected: %d", getName ().c_str (), driver.getNumberDevices ());
   for (unsigned deviceIdx = 0; deviceIdx < driver.getNumberDevices (); ++deviceIdx)
   {
-    ROS_INFO ("[%s] %u. device on bus %03u:%02u is a %s (%03x) from %s (%03x) with serial id \'%s\'"
+    NODELET_INFO ("[%s] %u. device on bus %03u:%02u is a %s (%03x) from %s (%03x) with serial id \'%s\'"
               , getName ().c_str (), deviceIdx + 1, driver.getBus (deviceIdx), driver.getAddress (deviceIdx)
               , driver.getProductName (deviceIdx), driver.getProductID (deviceIdx), driver.getVendorName (deviceIdx)
               , driver.getVendorID (deviceIdx), driver.getSerialNumber (deviceIdx));
@@ -162,7 +162,7 @@ void OpenNINodelet::setupDevice (ros::NodeHandle& param_nh)
   try {
     if (device_id.empty ())
     {
-      ROS_WARN ("[%s] device_id is not set! Using first device.", getName ().c_str ());
+      NODELET_WARN ("[%s] device_id is not set! Using first device.", getName ().c_str ());
       device_ = driver.getDeviceByIndex (0);
     }
     else if (device_id.find ('@') != string::npos)
@@ -170,18 +170,18 @@ void OpenNINodelet::setupDevice (ros::NodeHandle& param_nh)
       size_t pos = device_id.find ('@');
       unsigned bus = atoi (device_id.substr (0, pos).c_str ());
       unsigned address = atoi (device_id.substr (pos + 1, device_id.length () - pos - 1).c_str ());
-      ROS_INFO ("[%s] searching for device with bus@address = %d@%d", getName ().c_str (), bus, address);
+      NODELET_INFO ("[%s] searching for device with bus@address = %d@%d", getName ().c_str (), bus, address);
       device_ = driver.getDeviceByAddress (bus, address);
     }
     else if (device_id[0] == '#')
     {
       unsigned index = atoi (device_id.c_str () + 1);
-      ROS_INFO ("[%s] searching for device with index = %d", getName ().c_str (), index);
+      NODELET_INFO ("[%s] searching for device with index = %d", getName ().c_str (), index);
       device_ = driver.getDeviceByIndex (index - 1);
     }
     else
     {
-      ROS_INFO ("[%s] searching for device with serial number = %s", getName ().c_str (), device_id.c_str ());
+      NODELET_INFO ("[%s] searching for device with serial number = %s", getName ().c_str (), device_id.c_str ());
       device_ = driver.getDeviceBySerialNumber (device_id);
     }
   }
@@ -189,17 +189,17 @@ void OpenNINodelet::setupDevice (ros::NodeHandle& param_nh)
   {
     if (!device_)
     {
-      ROS_ERROR ("[%s] No matching device found.", getName ().c_str ());
+      NODELET_ERROR ("[%s] No matching device found.", getName ().c_str ());
       exit (-1);
     }
     else
     {
-      ROS_ERROR ("[%s] could not retrieve device. Reason %s", getName ().c_str (), exception.what ());
+      NODELET_ERROR ("[%s] could not retrieve device. Reason %s", getName ().c_str (), exception.what ());
       exit (-1);
     }
   }
 
-  ROS_INFO ("[%s] Opened '%s' on bus %d:%d with serial number '%s'", getName ().c_str (),
+  NODELET_INFO ("[%s] Opened '%s' on bus %d:%d with serial number '%s'", getName ().c_str (),
             device_->getProductName (), device_->getBus (), device_->getAddress (), device_->getSerialNumber ());
 
   device_->registerImageCallback (&OpenNINodelet::imageCallback, *this);
@@ -213,7 +213,7 @@ void OpenNINodelet::setupDevice (ros::NodeHandle& param_nh)
   param_nh.param ("debayering", debayering_method, 0 );
   if(debayering_method > 2 || debayering_method < 0)
   {
-    ROS_ERROR ("Unknown debayering method %d. Only Folowing values are available: Bilinear (0), EdgeAware (1), EdgeAwareWeighted (2). Falling back to Bilinear (0).", debayering_method);
+    NODELET_ERROR ("Unknown debayering method %d. Only Folowing values are available: Bilinear (0), EdgeAware (1), EdgeAwareWeighted (2). Falling back to Bilinear (0).", debayering_method);
     debayering_method = 0;
   }
   config_.debayering = debayering_method;
@@ -221,14 +221,14 @@ void OpenNINodelet::setupDevice (ros::NodeHandle& param_nh)
   param_nh.param ("depth_time_offset", config_.depth_time_offset, 0.0 );
   if(config_.depth_time_offset > 1.0 || config_.depth_time_offset < -1.0)
   {
-    ROS_ERROR ("depth time offset is % 2.5f seconds. Thats unlikely... setting back to 0.0 seconds", config_.depth_time_offset);
+    NODELET_ERROR ("depth time offset is % 2.5f seconds. Thats unlikely... setting back to 0.0 seconds", config_.depth_time_offset);
     config_.depth_time_offset = 0.0;
   }
 
   param_nh.param ("image_time_offset", config_.image_time_offset, 0.0 );
   if(config_.image_time_offset > 1.0 || config_.image_time_offset < -1.0)
   {
-    ROS_ERROR ("image time offset is % 2.5f seconds. Thats unlikely... setting back to 0.0 seconds", config_.image_time_offset);
+    NODELET_ERROR ("image time offset is % 2.5f seconds. Thats unlikely... setting back to 0.0 seconds", config_.image_time_offset);
     config_.image_time_offset = 0.0;
   }
 
@@ -238,7 +238,7 @@ void OpenNINodelet::setupDevice (ros::NodeHandle& param_nh)
       !isImageModeSupported (image_mode))
   {
     XnMapOutputMode image_md = device_->getDefaultImageMode ();
-    ROS_ERROR ("Unknown or unsopported image mode %d. Falling back to default mode %dx%d@%d.", image_mode, image_md.nXRes, image_md.nYRes, image_md.nFPS);
+    NODELET_ERROR ("Unknown or unsopported image mode %d. Falling back to default mode %dx%d@%d.", image_mode, image_md.nXRes, image_md.nYRes, image_md.nFPS);
     image_mode = mapXnMode2ConfigMode (image_md);
   }
   config_.image_mode = image_mode;
@@ -249,7 +249,7 @@ void OpenNINodelet::setupDevice (ros::NodeHandle& param_nh)
       !isDepthModeSupported (depth_mode))
   {
     XnMapOutputMode depth_md = device_->getDefaultImageMode ();
-    ROS_ERROR ("Unknown or unsopported depth mode %d. Falling back to default mode %dx%d@%d.", depth_mode, depth_md.nXRes, depth_md.nYRes, depth_md.nFPS);
+    NODELET_ERROR ("Unknown or unsopported depth mode %d. Falling back to default mode %dx%d@%d.", depth_mode, depth_md.nXRes, depth_md.nYRes, depth_md.nFPS);
     depth_mode = mapXnMode2ConfigMode (depth_md);
   }
   config_.depth_mode = depth_mode;
@@ -321,7 +321,7 @@ void OpenNINodelet::subscriberChangedEvent ()
     stopSynchronization ();
     device_->stopImageStream ();
     if (pub_rgb_info_.getNumSubscribers() > 0)
-      ROS_WARN("Camera Info for rgb stream has subscribers, but stream has stopped.");
+      NODELET_WARN("Camera Info for rgb stream has subscribers, but stream has stopped.");
   }
 
   if (isDepthStreamRequired () && !device_->isDepthStreamRunning ())
@@ -334,7 +334,7 @@ void OpenNINodelet::subscriberChangedEvent ()
     stopSynchronization ();
     device_->stopDepthStream ();
     if (pub_depth_info_.getNumSubscribers() > 0)
-      ROS_WARN("Camera Info for depth stream has subscribers, but stream has stopped.");
+      NODELET_WARN("Camera Info for depth stream has subscribers, but stream has stopped.");
   }
 
   // if PointcloudXYZRGB is subscribed, we have to assure that depth stream is registered and
@@ -346,7 +346,7 @@ void OpenNINodelet::subscriberChangedEvent ()
     reconfigure_mutex_.lock ();
     if (!device_->isDepthRegistered ())
     {
-      ROS_WARN ("turning on depth registration, since PointCloudXYZRGB has subscribers.");
+      NODELET_WARN ("turning on depth registration, since PointCloudXYZRGB has subscribers.");
       device_->setDepthRegistration (true);
       config.depth_registration = true;
     }
@@ -355,7 +355,7 @@ void OpenNINodelet::subscriberChangedEvent ()
     XnMapOutputMode image_mode = mapConfigMode2XnMode (config_.image_mode);
     if (depth_mode.nXRes > image_mode.nXRes || depth_mode.nYRes > image_mode.nYRes)
     {
-      ROS_WARN ("PointCloudXYZRGB need at least the same image size for mapping rgb values to the points");
+      NODELET_WARN ("PointCloudXYZRGB need at least the same image size for mapping rgb values to the points");
       config.image_mode = config_.depth_mode;
     }
 
@@ -512,7 +512,7 @@ void OpenNINodelet::publishXYZRGBPointCloud (const sensor_msgs::ImageConstPtr& d
     // we dont want to flood the terminal with warnings
     static unsigned warned = 0;
     if (warned % 100 == 0)
-      ROS_WARN("rgb image smaller than depth image... skipping point cloud for this frame rgb:%dx%d vs. depth:%3dx%d"
+      NODELET_WARN("rgb image smaller than depth image... skipping point cloud for this frame rgb:%dx%d vs. depth:%3dx%d"
               , rgb_msg->width, rgb_msg->height, depth_msg->width, depth_msg->height );
     ++warned;
     return;
@@ -608,7 +608,7 @@ void OpenNINodelet::configCallback (Config &config, uint32_t level)
 
   if (!device_->findCompatibleImageMode (image_mode, compatible_image_mode))
   {
-    ROS_WARN ("Could not find any compatible image output mode for %d x %d @ %d.",
+    NODELET_WARN ("Could not find any compatible image output mode for %d x %d @ %d.",
             image_mode.nXRes, image_mode.nYRes, image_mode.nFPS);
 
     // dont change anything!
@@ -620,7 +620,7 @@ void OpenNINodelet::configCallback (Config &config, uint32_t level)
   depth_mode = mapConfigMode2XnMode (config.depth_mode);
   if (!device_->findCompatibleDepthMode (depth_mode, compatible_depth_mode))
   {
-    ROS_WARN ("Could not find any compatible depth output mode for %d x %d @ %d.",
+    NODELET_WARN ("Could not find any compatible depth output mode for %d x %d @ %d.",
             depth_mode.nXRes, depth_mode.nYRes, depth_mode.nFPS);
 
     // dont change anything!
@@ -643,14 +643,14 @@ void OpenNINodelet::configCallback (Config &config, uint32_t level)
         kinect->setDebayeringMethod (ImageBayerGRBG::EdgeAwareWeighted);
         break;
       default:
-        ROS_ERROR ("unknwon debayering method");
+        NODELET_ERROR ("unknwon debayering method");
         config.debayering = config_.debayering;
         break;
     }
   }
   else if (config.debayering != config_.debayering) // this was selected explicitely
   {
-    ROS_WARN ("%s does not output bayer images. Selection has no affect.", device_->getProductName () );
+    NODELET_WARN ("%s does not output bayer images. Selection has no affect.", device_->getProductName () );
   }
 
   if (pub_point_cloud_rgb_.getNumSubscribers () > 0)
@@ -659,13 +659,13 @@ void OpenNINodelet::configCallback (Config &config, uint32_t level)
      (image_mode.nXRes % depth_mode.nXRes != 0) )
     {
       // we dont care about YRes, since SXGA works fine for kinect with all depth resolutions
-      ROS_WARN ("depth mode not compatible to image mode, since PointCloudXYZRGB has subscribers.");
+      NODELET_WARN ("depth mode not compatible to image mode, since PointCloudXYZRGB has subscribers.");
       config = config_;
       return;
     }
     if (!config.depth_registration && config_.depth_registration)
     {
-      ROS_WARN ("can not turn of registration, since PointCloudXYZRGB has subscribers.");
+      NODELET_WARN ("can not turn of registration, since PointCloudXYZRGB has subscribers.");
       config = config_;
       return;
     }
@@ -801,7 +801,7 @@ int OpenNINodelet::mapXnMode2ConfigMode (const XnMapOutputMode& output_mode) con
 
   if (it == xn2config_map_.end ())
   {
-    ROS_ERROR ("mode %dx%d@%d could not be found", output_mode.nXRes, output_mode.nYRes, output_mode.nFPS);
+    NODELET_ERROR ("mode %dx%d@%d could not be found", output_mode.nXRes, output_mode.nYRes, output_mode.nFPS);
     exit (-1);
   }
   else
@@ -813,7 +813,7 @@ XnMapOutputMode OpenNINodelet::mapConfigMode2XnMode (int mode) const
   std::map<int, XnMapOutputMode>::const_iterator it = config2xn_map_.find (mode);
   if (it == config2xn_map_.end ())
   {
-    ROS_ERROR ("mode %d could not be found", mode);
+    NODELET_ERROR ("mode %d could not be found", mode);
     exit (-1);
   }
   else
