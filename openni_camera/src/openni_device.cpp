@@ -34,6 +34,7 @@
  *  POSSIBILITY OF SUCH DAMAGE.
  *
  */
+#include <openni_camera/openni_image.h>
 #include <openni_camera/openni_device.h>
 #include <openni_camera/openni_depth_image.h>
 #include <iostream>
@@ -86,14 +87,14 @@ OpenNIDevice::~OpenNIDevice () throw ()
     depth_generator_.StopGenerating ();
 
   // lock before changing running flag
-  depth_mutex_.lock ();
   image_mutex_.lock ();
+  depth_mutex_.lock ();
   running_ = false;
 
   depth_condition_.notify_all ();
   image_condition_.notify_all ();
-  image_mutex_.unlock ();
   depth_mutex_.unlock ();
+  image_mutex_.unlock ();
 
   image_thread_.join ();
   depth_thread_.join ();
@@ -207,8 +208,8 @@ bool OpenNIDevice::isDepthStreamRunning () const throw (OpenNIException)
 
 void OpenNIDevice::setDepthRegistration (bool on_off) throw (OpenNIException)
 {
-  lock_guard<mutex> depth_lock (depth_mutex_);
   lock_guard<mutex> image_lock (image_mutex_);
+  lock_guard<mutex> depth_lock (depth_mutex_);
   if (on_off && !depth_generator_.GetAlternativeViewPointCap ().IsViewPointAs (image_generator_))
   {
     if (depth_generator_.GetAlternativeViewPointCap ().IsViewPointSupported (image_generator_))
@@ -234,8 +235,8 @@ bool OpenNIDevice::isDepthRegistered () const throw (OpenNIException)
   xn::DepthGenerator& depth_generator = const_cast<xn::DepthGenerator&>(depth_generator_);
   xn::ImageGenerator& image_generator = const_cast<xn::ImageGenerator&>(image_generator_);
 
-  lock_guard<mutex> depth_lock (depth_mutex_);
   lock_guard<mutex> image_lock (image_mutex_);
+  lock_guard<mutex> depth_lock (depth_mutex_);
   return (depth_generator.GetAlternativeViewPointCap ().IsViewPointAs (image_generator));
 }
 
