@@ -584,7 +584,7 @@ sensor_msgs::CameraInfoPtr OpenNINodelet::fillCameraInfo (ros::Time time, bool i
   double f = is_rgb ? device_->getImageFocalLength (image_width_) : device_->getDepthFocalLength (depth_width_);
   info_msg->K[0] = info_msg->K[4] = f;
   info_msg->K[2] = (info_msg->width / 2) - 0.5;
-  info_msg->K[5] = (info_msg->height / 2) - 0.5;
+  info_msg->K[5] = (info_msg->width * 3./8.) - 0.5; //aspect ratio for the camera center on kinect and presumably other devices is 4/3
   info_msg->K[8] = 1.0;
   // no rotation: identity
   info_msg->R[0] = info_msg->R[4] = info_msg->R[8] = 1.0;
