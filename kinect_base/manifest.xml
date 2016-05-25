@@ -1,0 +1,19 @@
+<package>
+  <description brief="kinect_base">
+    Compiles a stripped down version of the libfreenect library (originally written by Hector Martin) that
+    only controls the tilt, imu, and leds on the kinect.  This allows control of only that part when the 
+    depth and vision are claimed by OpenNI.
+  </description>
+  <author>Nathaniel Robert Lewis</author>
+  <license>BSD,LGPL</license>
+  <review status="unreviewed" notes=""/>
+  <url>http://ros.org/wiki/kinect_base</url>
+  <depend package="roscpp"/>
+  <depend package="std_msgs"/>
+  <depend package="sensor_msgs"/>
+
+  <rosdep name="libusb1.0" />
+
+</package>
+
+
